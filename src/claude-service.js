@@ -55,3 +55,32 @@ export async function testClaudeConnection() {
     throw error;
   }
 }
+
+/**
+ * Evaluates a LinkedIn profile based on name and headline against ICP.
+ * @param {string} name 
+ * @param {string} headline 
+ * @returns {Promise<{score: number, reason: string}>}
+ */
+export async function evaluateConnectionTarget(name, headline) {
+  const systemPrompt = `You are a lead generation expert. Evaluate the following LinkedIn profile for a networking campaign.
+Target ICP: Developers, Founders, Technical roles, Engineering managers, Startup employees.
+Penalize: Students, recruiters (unless technical), irrelevant industries (real estate, retail), empty or generic profiles.
+Reward: Builders, open source contributors, "Founding Engineer", "CTO", "Software Architect".
+
+Output MUST be a JSON object: { "score": 1-10, "reason": "short explanation" }`;
+
+  const userPrompt = `Profile:
+Name: ${name}
+Headline: ${headline}`;
+
+  const responseText = await callClaude(systemPrompt, userPrompt);
+  try {
+    // Attempt to parse JSON from the response
+    const cleanedText = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    return JSON.parse(cleanedText);
+  } catch (e) {
+    logger.error('Failed to parse Claude evaluation response', { responseText });
+    return { score: 1, reason: 'Failed to parse AI response' };
+  }
+}
