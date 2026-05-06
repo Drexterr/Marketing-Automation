@@ -49,3 +49,112 @@ export async function searchAndExtractProfiles(page, keyword) {
     return [];
   }
 }
+
+/**
+ * Main workflow to find and connect with relevant profiles.
+ */
+export async function runConnectionWorkflow(page) {
+  const keywords = (process.env.TARGET_KEYWORDS || '').split(',').map(k => k.trim());
+  const limit = parseInt(process.env.WEEKLY_CONNECTION_LIMIT || '50', 10);
+
+  for (const keyword of keywords) {
+    if (!(await checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit))) {
+      logger.warn('Weekly connection limit reached. Stopping.');
+      break;
+    }
+
+    const profiles = await searchAndExtractProfiles(page, keyword);
+
+    for (const profile of profiles) {
+      if (!(await checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit))) {
+        logger.warn('Weekly connection limit reached. Stopping.');
+        return;
+      }
+
+      logger.info(`Evaluating profile: ${profile.name}`);
+      
+      try {
+        const evaluation = await claudeService.evaluateConnectionTarget(profile.name, profile.headline);
+        logger.info(`Score: ${evaluation.score} - ${evaluation.reason}`);
+
+        if (evaluation.score >= 8) {
+          await sendConnectionRequest(page, profile);
+          // Wait between successful requests
+          await randomDelay(15000, 30000);
+        } else {
+          logger.info(`Skipping ${profile.name} due to low score.`);
+          await randomDelay(2000, 5000);
+        }
+      } catch (error) {
+        logger.error(`Error processing profile ${profile.name}`, { error: error.message });
+      }
+    }
+  }
+}
+
+/**
+ * Sends a connection request with a personalized note to a specific profile.
+ */
+async function sendConnectionRequest(page, profile) {
+  logger.info(`Sending connection request to ${profile.name}`);
+  
+  try {
+    // Navigate to profile to be safer/more natural
+    await page.goto(profile.url, { waitUntil: 'networkidle' });
+    await randomDelay(5000, 8000);
+
+    // Click Connect button
+    // Note: Selectors for LinkedIn change often, using common patterns
+    let connectButton = await page.$('button.pvs-profile-actions__action:has-text("Connect")');
+    
+    // Fallback if not found on main profile
+    if (!connectButton) {
+      const moreButton = await page.$('button[aria-label="More actions"]');
+      if (moreButton) {
+        await moreButton.click();
+        await randomDelay(1000, 2000);
+        connectButton = await page.$('div[role="button"]:has-text("Connect")');
+      }
+    }
+    
+    if (!connectButton) {
+      logger.warn(`Connect button not found for ${profile.name}. Might be already connected or have "Follow" primary.`);
+      return;
+    }
+
+    await connectButton.click();
+    await randomDelay(2000, 4000);
+
+    // Click Add a note
+    const addNoteButton = await page.$('button[aria-label="Add a note"]');
+    if (addNoteButton) {
+      await addNoteButton.click();
+      await randomDelay(2000, 3000);
+
+      const note = await claudeService.generateConnectionNote(profile.name, profile.headline);
+      logger.info(`Generated note: ${note}`);
+      
+      await page.fill('textarea[name="message"]', note);
+      await randomDelay(2000, 4000);
+      
+      await page.click('button[aria-label="Send now"]');
+    } else {
+      // If no add note button, just send (though we prefer notes)
+      const sendWithoutNoteButton = await page.$('button[aria-label="Send without a note"]');
+      if (sendWithoutNoteButton) {
+        await sendWithoutNoteButton.click();
+      }
+    }
+
+    await logAction(CONNECTIONS_SENT_FILE, {
+      name: profile.name,
+      headline: profile.headline,
+      url: profile.url,
+      action: 'connection_sent'
+    });
+    
+    logger.info(`Successfully sent request to ${profile.name}`);
+  } catch (error) {
+    logger.error(`Failed to send connection request to ${profile.name}`, { error: error.message });
+  }
+}
