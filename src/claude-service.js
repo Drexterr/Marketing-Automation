@@ -84,3 +84,29 @@ Headline: ${headline}`;
     return { score: 1, reason: 'Failed to parse AI response' };
   }
 }
+
+/**
+ * Generates a short, natural LinkedIn connection note.
+ * @param {string} name 
+ * @param {string} headline 
+ * @returns {Promise<string>}
+ */
+export async function generateConnectionNote(name, headline) {
+  const systemPrompt = `Generate a short, natural LinkedIn connection note (<300 chars) for the following person.
+Goal: Founder-to-founder networking.
+Tone: Natural, casual, professional, NOT salesy.
+Constraints: No "I hope this finds you well", no "I'd love to add you to my network", no generic AI fluff.
+
+Few-shot examples:
+1. "Hey [Name], saw your work on [Topic] - really liked the approach you took. Would love to connect and follow your progress."
+2. "Hi [Name], fellow founder here. Been following what you're building at [Company], looks super interesting. Let's connect!"
+3. "[Name], your recent post about [Topic] resonated. I'm also deep in the [Industry] space. Cheers!"`;
+
+  const userPrompt = `Profile:
+Name: ${name}
+Headline: ${headline}
+
+Response should ONLY contain the note text.`;
+
+  return await callClaude(systemPrompt, userPrompt, 150);
+}
