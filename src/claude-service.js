@@ -1,27 +1,40 @@
 import Anthropic from '@anthropic-ai/sdk';
 import logger from './utils/logger.js';
 
-// Fix 6: Dotenv config removed (moved to index.js)
-
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 /**
- * Private helper to call Claude with a system and user prompt.
+ * Fix 4: Add retry logic to Claude API calls
  */
-async function callClaude(systemPrompt, userPrompt, maxTokens = 500) {
-  try {
-    const response = await anthropic.messages.create({
-      model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
-    return response.content[0].text;
-  } catch (error) {
-    logger.error('Claude API call failed', { message: error.message });
-    throw error;
+async function callClaude(systemPrompt, userPrompt, maxTokens = 500, retries = 2) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20240620',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: userPrompt }],
+        system: systemPrompt
+      });
+
+      return response.content[0].text;
+
+    } catch (error) {
+      if (
+        attempt === retries ||
+        error.status === 401 ||
+        error.status === 400
+      ) {
+        throw error;
+      }
+
+      logger.warn(`Claude retry ${attempt}`, {
+        message: error.message
+      });
+
+      await new Promise(r => setTimeout(r, 5000));
+    }
   }
 }
 
@@ -29,14 +42,12 @@ export async function testClaudeConnection() {
   try {
     logger.info('Testing Claude API connection');
     const message = await anthropic.messages.create({
-      // Fix 4: Use environment variable for model
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      model: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20240620',
       max_tokens: 10,
       messages: [{ role: 'user', content: 'Say "Connection successful"' }],
     });
     return message.content[0].text;
   } catch (error) {
-    // Enhancement C: Improved Claude API error handling
     if (error.status === 401) {
       logger.error('Anthropic API test failed: Invalid API Key. Setup cannot continue.', {
         message: error.message
@@ -46,7 +57,6 @@ export async function testClaudeConnection() {
         message: error.message
       });
     } else {
-      // Fix 8: Standardized error logging
       logger.error('Claude API test failed', {
         message: error.message,
         stack: error.stack
@@ -56,27 +66,30 @@ export async function testClaudeConnection() {
   }
 }
 
-/**
- * Evaluates a LinkedIn profile based on name and headline against ICP.
- * @param {string} name 
- * @param {string} headline 
- * @returns {Promise<{score: number, reason: string}>}
- */
-export async function evaluateConnectionTarget(name, headline) {
-  const systemPrompt = `You are a lead generation expert. Evaluate the following LinkedIn profile for a networking campaign.
-Target ICP: Developers, Founders, Technical roles, Engineering managers, Startup employees.
-Penalize: Students, recruiters (unless technical), irrelevant industries (real estate, retail), empty or generic profiles.
-Reward: Builders, open source contributors, "Founding Engineer", "CTO", "Software Architect".
+export async function evaluateConnectionTarget(name, headline, company = '') {
+  const productName = process.env.PRODUCT_NAME || 'a B2B SaaS product';
+  const systemPrompt = `You are a lead generation expert for ${productName}.
 
-Output MUST be a JSON object: { "score": 1-10, "reason": "short explanation" }`;
+Score LinkedIn profiles 1–10 against this ICP: early-stage technical founders, founding engineers, solo devs building SaaS/tools/AI products.
+
+SCORING TIERS:
+9–10: Founding Engineer, CTO at seed-stage startup, open-source maintainer, indie hacker with shipped product
+7–8: Senior engineer at startup (<200 employees), technical co-founder, "Building in public" bio
+5–6: Engineer at mid-size company, product manager with technical background
+3–4: Engineer at enterprise (FAANG, banks), non-technical founder, recruiter
+1–2: Student, HR, sales, real estate, retail, empty headline
+
+HARD REJECT (score ≤ 2): recruiter, staffing, HR, real estate, insurance
+
+Output ONLY valid JSON: { "score": 1-10, "reason": "one sentence" }`;
 
   const userPrompt = `Profile:
 Name: ${name}
-Headline: ${headline}`;
+Headline: ${headline}
+Current Company: ${company || 'Unknown'}`;
 
   const responseText = await callClaude(systemPrompt, userPrompt);
   try {
-    // Attempt to parse JSON from the response
     const cleanedText = responseText.replace(/```json\n?|\n?```/g, '').trim();
     return JSON.parse(cleanedText);
   } catch (e) {
@@ -86,43 +99,75 @@ Headline: ${headline}`;
 }
 
 /**
- * Generates a short, natural LinkedIn connection note.
- * @param {string} name 
- * @param {string} headline 
- * @returns {Promise<string>}
+ * Fix 1: Pass company into connection note generation
  */
-export async function generateConnectionNote(name, headline) {
-  const systemPrompt = `Generate a short, natural LinkedIn connection note (<300 chars) for the following person.
-Goal: Founder-to-founder networking.
-Tone: Natural, casual, professional, NOT salesy.
-Constraints: No "I hope this finds you well", no "I'd love to add you to my network", no generic AI fluff.
+export async function generateConnectionNote(name, headline, company = '') {
+  const founderName = process.env.FOUNDER_NAME || 'a founder';
+  const productName = process.env.PRODUCT_NAME || 'my product';
+  const productDesc = process.env.PRODUCT_DESCRIPTION || '';
 
-Few-shot examples:
-1. "Hey [Name], saw your work on [Topic] - really liked the approach you took. Would love to connect and follow your progress."
-2. "Hi [Name], fellow founder here. Been following what you're building at [Company], looks super interesting. Let's connect!"
-3. "[Name], your recent post about [Topic] resonated. I'm also deep in the [Industry] space. Cheers!"`;
+  const systemPrompt = `You write LinkedIn connection notes for ${founderName}, founder of ${productName} (${productDesc}).
+
+Rules:
+- Under 280 characters
+- Reference something specific in their headline
+- One concrete hook
+- No generic AI phrases
+- Sound like a real person`;
 
   const userPrompt = `Profile:
 Name: ${name}
 Headline: ${headline}
+Current Company: ${company || 'not listed'}
 
-Response should ONLY contain the note text.`;
+Write a short, natural LinkedIn connection note (max 300 characters).
+Be specific. Use company context if relevant.
 
-  return await callClaude(systemPrompt, userPrompt, 150);
+Return ONLY the note text. No quotes.`;
+
+  let note = await callClaude(systemPrompt, userPrompt, 150);
+  if (note.length > 290) {
+    note = note.slice(0, 287) + '...';
+  }
+  return note;
 }
 
 /**
- * Generates a short, relevant comment for a LinkedIn post.
- * @param {string} postContent 
- * @returns {Promise<string>}
+ * Fix 3: Add product context to feed comment generation
  */
 export async function generateFeedComment(postContent) {
-  const systemPrompt = `Generate a short, relevant, and engaging comment for the following LinkedIn post.
-Constraints: Short (1-2 sentences), insightful or supportive, no generic "Great post!", no AI fluff.`;
+  const founderName = process.env.FOUNDER_NAME || 'a founder';
+  const productName = process.env.PRODUCT_NAME || 'a product';
+
+  const systemPrompt = `You write LinkedIn comments as ${founderName}, founder of ${productName}.
+
+Write 1–2 sentence comments:
+- specific to the post
+- no generic praise
+- no "great post"
+- no DM bait
+
+Return ONLY the comment text.`;
 
   const userPrompt = `Post Content: ${postContent}
 
 Response should ONLY contain the comment text.`;
 
   return await callClaude(systemPrompt, userPrompt, 150);
+}
+
+export async function isPostRelevant(postContent) {
+  const systemPrompt = `You are a relevance filter. Reply ONLY with valid JSON: { "relevant": true/false, "reason": "one short phrase" }
+
+Relevant = post is about: software development, AI/ML, startup building, tech products, engineering career, developer tools, SaaS.`;
+
+  const userPrompt = `Post: ${postContent.slice(0, 600)}`;
+
+  try {
+    const result = await callClaude(systemPrompt, userPrompt, 80);
+    const parsed = JSON.parse(result.replace(/```json\n?|\n?```/g, '').trim());
+    return parsed.relevant === true;
+  } catch {
+    return false;
+  }
 }
