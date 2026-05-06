@@ -64,13 +64,14 @@ export async function runFeedCommenting(count = 3) {
 
           const postButton = await post.$('button.comments-comment-box__submit-button');
           if (postButton) {
-            // await postButton.click(); // Safety: keep commented out for dry run
-            logger.info('WOULD click post button here');
+            await postButton.click();
+            logger.info('Successfully posted comment');
             
             await logAction(path.join(process.cwd(), 'data', 'comments-sent.json'), {
               urn,
               postText: postText.substring(0, 100),
-              comment
+              comment,
+              status: 'sent'
             });
             commentsSent++;
             await randomDelay(5000, 10000);

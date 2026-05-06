@@ -78,7 +78,8 @@ export async function runConnectionWorkflow(page) {
         logger.info(`Score: ${evaluation.score} - ${evaluation.reason}`);
 
         if (evaluation.score >= 8) {
-          await sendConnectionRequest(page, profile);
+          const note = await claudeService.generateConnectionNote(profile.name, profile.headline);
+          await sendConnectionRequest(page, profile, evaluation.score, note);
           // Wait between successful requests
           await randomDelay(15000, 30000);
         } else {
@@ -95,7 +96,7 @@ export async function runConnectionWorkflow(page) {
 /**
  * Sends a connection request with a personalized note to a specific profile.
  */
-async function sendConnectionRequest(page, profile) {
+async function sendConnectionRequest(page, profile, score, note) {
   logger.info(`Sending connection request to ${profile.name}`);
   
   try {
@@ -131,7 +132,6 @@ async function sendConnectionRequest(page, profile) {
       await addNoteButton.click();
       await randomDelay(2000, 3000);
 
-      const note = await claudeService.generateConnectionNote(profile.name, profile.headline);
       logger.info(`Generated note: ${note}`);
       
       await page.fill('textarea[name="message"]', note);
@@ -150,7 +150,9 @@ async function sendConnectionRequest(page, profile) {
       name: profile.name,
       headline: profile.headline,
       url: profile.url,
-      action: 'connection_sent'
+      score,
+      note,
+      status: 'sent'
     });
     
     logger.info(`Successfully sent request to ${profile.name}`);

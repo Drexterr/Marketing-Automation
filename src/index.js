@@ -4,6 +4,8 @@ dotenv.config();
 
 import { BrowserManager } from './browser.js';
 import { testClaudeConnection } from './claude-service.js';
+import { runConnectionWorkflow } from './task-connect.js';
+import { runFeedCommenting } from './task-feed.js';
 import logger from './utils/logger.js';
 
 async function setup() {
@@ -50,6 +52,26 @@ async function setup() {
   }
 }
 
+async function connect() {
+  const browserManager = new BrowserManager();
+  try {
+    const page = await browserManager.launch(process.env.HEADLESS === 'true');
+    await runConnectionWorkflow(page);
+  } catch (error) {
+    logger.error('Connection task failed', { message: error.message, stack: error.stack });
+  } finally {
+    await browserManager.close();
+  }
+}
+
+async function feed() {
+  try {
+    await runFeedCommenting(3);
+  } catch (error) {
+    logger.error('Feed task failed', { message: error.message, stack: error.stack });
+  }
+}
+
 const command = process.argv[2];
 if (command === 'setup') {
   // Fix 3: Fix unhandled async in CLI entry
@@ -60,6 +82,16 @@ if (command === 'setup') {
     });
     process.exit(1);
   });
+} else if (command === 'connect') {
+  connect().catch((err) => {
+    logger.error('Unhandled connect error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
+} else if (command === 'feed') {
+  feed().catch((err) => {
+    logger.error('Unhandled feed error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
 } else {
-  console.log('Usage: node src/index.js setup');
+  console.log('Usage: node src/index.js [setup|connect|feed]');
 }
