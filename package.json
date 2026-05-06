@@ -9,7 +9,7 @@
     "connect": "node index.js connect",
     "messages": "node index.js messages",
     "feed": "node index.js feed",
-    "setup": "node setup.js"
+    "setup": "node src/index.js setup"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
