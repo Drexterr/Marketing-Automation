@@ -1,0 +1,24 @@
+{
+  "name": "linkedin-automation",
+  "version": "1.0.0",
+  "description": "LinkedIn automation for CUE AI founder - connect, message, and comment using Claude AI",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "connect": "node index.js connect",
+    "messages": "node index.js messages",
+    "feed": "node index.js feed",
+    "setup": "node setup.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "playwright": "^1.44.0",
+    "dotenv": "^16.4.5",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "commander": "^12.1.0",
+    "winston": "^3.13.0",
+    "node-cron": "^3.0.3"
+  }
+}
