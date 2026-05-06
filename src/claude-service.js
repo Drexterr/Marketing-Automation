@@ -110,3 +110,19 @@ Response should ONLY contain the note text.`;
 
   return await callClaude(systemPrompt, userPrompt, 150);
 }
+
+/**
+ * Generates a short, relevant comment for a LinkedIn post.
+ * @param {string} postContent 
+ * @returns {Promise<string>}
+ */
+export async function generateFeedComment(postContent) {
+  const systemPrompt = `Generate a short, relevant, and engaging comment for the following LinkedIn post.
+Constraints: Short (1-2 sentences), insightful or supportive, no generic "Great post!", no AI fluff.`;
+
+  const userPrompt = `Post Content: ${postContent}
+
+Response should ONLY contain the comment text.`;
+
+  return await callClaude(systemPrompt, userPrompt, 150);
+}
