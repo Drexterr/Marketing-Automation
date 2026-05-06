@@ -38,8 +38,46 @@ export async function runFeedCommenting(count = 3) {
         if (postText.length < 50) continue;
 
         logger.info(`Found candidate post: ${urn}`);
-        // Commenting logic will go here
-        commentsSent++; 
+        
+        try {
+          await post.scrollIntoViewIfNeeded();
+          
+          logger.info('Generating comment with Claude...');
+          const comment = await claudeService.generateFeedComment(postText);
+          logger.info(`Generated comment: ${comment}`);
+
+          const commentButton = await post.$('button:has-text("Comment")');
+          if (!commentButton) {
+            logger.warn(`Comment button not found for post ${urn}`);
+            continue;
+          }
+          await commentButton.click();
+          await randomDelay(1000, 2000);
+
+          const editor = await post.$('.ql-editor[role="textbox"]');
+          if (!editor) {
+            logger.warn(`Comment textbox not found for post ${urn}`);
+            continue;
+          }
+          await editor.fill(comment);
+          await randomDelay(1000, 3000);
+
+          const postButton = await post.$('button.comments-comment-box__submit-button');
+          if (postButton) {
+            // await postButton.click(); // Safety: keep commented out for dry run
+            logger.info('WOULD click post button here');
+            
+            await logAction(path.join(process.cwd(), 'data', 'comments-sent.json'), {
+              urn,
+              postText: postText.substring(0, 100),
+              comment
+            });
+            commentsSent++;
+            await randomDelay(5000, 10000);
+          }
+        } catch (err) {
+          logger.error(`Failed to comment on post ${urn}`, { message: err.message });
+        }
       }
 
       logger.info(`Progress: ${commentsSent}/${count}`);
