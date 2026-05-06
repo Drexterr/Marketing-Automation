@@ -17,16 +17,34 @@ export async function runFeedCommenting(count = 3) {
     const processedPostUrns = new Set();
 
     while (commentsSent < count) {
-      // Logic for finding and commenting on posts will go here
+      const posts = await page.$$('.feed-shared-update-v2');
+      
+      for (const post of posts) {
+        if (commentsSent >= count) break;
+
+        const urn = await post.getAttribute('data-urn');
+        if (!urn || processedPostUrns.has(urn)) continue;
+        processedPostUrns.add(urn);
+
+        // Check if promoted
+        const isPromoted = await post.$('.feed-shared-update-v2__sub-line--promoted');
+        if (isPromoted) continue;
+
+        // Extract text
+        const textElement = await post.$('.feed-shared-update-v2__description-wrapper');
+        if (!textElement) continue;
+        
+        const postText = await textElement.innerText();
+        if (postText.length < 50) continue;
+
+        logger.info(`Found candidate post: ${urn}`);
+        // Commenting logic will go here
+        commentsSent++; 
+      }
+
       logger.info(`Progress: ${commentsSent}/${count}`);
       await page.evaluate(() => window.scrollBy(0, 500));
       await randomDelay(2000, 4000);
-      
-      // Temporary break to avoid infinite loop during initial test
-      if (commentsSent === 0 && processedPostUrns.size === 0) {
-          logger.info('Navigation successful, stopping for now.');
-          break;
-      }
     }
 
   } catch (error) {
