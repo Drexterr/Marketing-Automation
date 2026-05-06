@@ -6,7 +6,7 @@ import chalk from "chalk";
 import { runConnectionTask } from "./task-connect.js";
 import { runMessagesTask } from "./task-messages.js";
 import { runFeedTask } from "./task-feed.js";
-import { logger } from "./logger.js";
+import { logger } from "./src/utils/logger.js";
 
 const banner = `
 ${chalk.cyan("╔══════════════════════════════════════════╗")}

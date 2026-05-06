@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
-import { logger } from "./logger.js";
+import { logger } from "./src/utils/logger.js";
 
 const SESSION_FILE = path.join(process.cwd(), "data", "session.json");
 

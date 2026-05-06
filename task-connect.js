@@ -3,7 +3,7 @@ import {
   evaluateConnectionTarget,
   generateConnectionNote,
 } from "./claude-service.js";
-import { logger } from "./logger.js";
+import { logger } from "./src/utils/logger.js";
 import fs from "fs";
 import path from "path";
 
