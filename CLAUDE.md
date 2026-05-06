@@ -32,20 +32,20 @@ There are no tests or a linter configured.
 
 ## Architecture
 
-All source files are at the repo root (not in `src/`):
+Source files are transitioning to the `src/` directory for a more modular structure:
 
 | File | Role |
 |------|------|
-| `index.js` | CLI entry point (Commander.js), cron scheduler via `node-cron` |
-| `browser.js` | `LinkedInBrowser` class — Playwright launch, session persistence, stealth, human delays |
-| `claude-service.js` | All Anthropic API calls — profile evaluation, note/message/comment generation |
-| `task-connect.js` | Search → evaluate → send connection requests |
-| `task-messages.js` | Read unread conversations → generate → type replies |
-| `task-feed.js` | Scroll feed → score posts → comment |
+| `src/index.js` | CLI entry point (Commander.js) |
+| `src/browser.js` | `BrowserManager` class — Playwright launch, session persistence |
+| `src/claude-service.js` | Anthropic API integration |
+| `src/utils/logger.js` | Centralized Winston logging |
+| `task-connect.js` | (Legacy) Search → evaluate → send connection requests |
+| `task-messages.js` | (Legacy) Read unread conversations → generate → type replies |
+| `task-feed.js` | (Legacy) Scroll feed → score posts → comment |
 
 ### Data flow
-
-Each task creates its own `LinkedInBrowser` instance, calls `browser.launch()` + `browser.login()`, then uses `claude-service.js` for AI decisions. State is persisted in `data/*.json` files (auto-created). Session cookies are saved to `data/session.json` after first login.
+New components use the `BrowserManager` instance for stateful browser control. State is persisted in `data/*.json` files. Session cookies are saved to `data/session.json`.
 
 ### Claude model in use
 
