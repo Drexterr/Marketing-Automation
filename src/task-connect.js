@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { randomDelay, logAction, checkWeeklyLimit } from './utils/helpers.js';
+import { randomDelay, appendConnection, checkWeeklyLimit } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import path from 'path';
 
@@ -53,7 +53,7 @@ export async function runConnectionWorkflow(page) {
   const limit = parseInt(process.env.WEEKLY_CONNECTION_LIMIT || '50', 10);
 
   for (const keyword of keywords) {
-    if (!(await checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit))) {
+    if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit)) {
       logger.warn('Weekly connection limit reached. Stopping.');
       break;
     }
@@ -61,7 +61,7 @@ export async function runConnectionWorkflow(page) {
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
-      if (!(await checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit))) {
+      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit)) {
         logger.warn('Weekly connection limit reached. Stopping.');
         return;
       }
@@ -73,9 +73,6 @@ export async function runConnectionWorkflow(page) {
         logger.info(`Score: ${evaluation.score} - ${evaluation.reason}`);
 
         if (evaluation.score >= 7) {
-          /**
-           * Fix 1: Pass company into connection note generation
-           */
           const note = await claudeService.generateConnectionNote(
             profile.name,
             profile.headline,
@@ -92,11 +89,19 @@ export async function runConnectionWorkflow(page) {
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
       }
     }
+
+    /**
+     * Fix 3: Add delay between keyword searches
+     */
+    logger.info(`Finished keyword "${keyword}". Waiting before next search...`);
+    await randomDelay(5000, 15000);
   }
 }
 
 async function sendConnectionRequest(page, profile, score, note) {
   logger.info(`Sending connection request to ${profile.name}`);
+  let success = false;
+  let failureReason = null;
 
   try {
     await page.goto(profile.url, { waitUntil: 'networkidle' });
@@ -115,45 +120,50 @@ async function sendConnectionRequest(page, profile, score, note) {
 
     if (!connectButton) {
       logger.warn(`Connect button not found for ${profile.name}`);
-      return false;
-    }
-
-    await connectButton.click();
-    await randomDelay(2000, 4000);
-
-    const addNoteButton = await page.$('button[aria-label="Add a note"]');
-    if (!addNoteButton) {
-      const cancelButton = await page.$('button[aria-label="Dismiss"]');
-      if (cancelButton) await cancelButton.click();
-      return false;
-    }
-
-    await addNoteButton.click();
-    await randomDelay(2000, 3000);
-
-    const editor = await page.$('textarea[name="message"]');
-    if (editor) {
-      /**
-       * Fix 7: Fix typing focus drift
-       */
-      await editor.type(note, { delay: 50 });
+      failureReason = 'connect_button_not_found';
+    } else {
+      await connectButton.click();
       await randomDelay(2000, 4000);
-      await page.click('button[aria-label="Send now"]');
+
+      const addNoteButton = await page.$('button[aria-label="Add a note"]');
+      if (!addNoteButton) {
+        logger.warn(`"Add a note" button not found for ${profile.name}`);
+        failureReason = 'note_dialog_missing';
+        const cancelButton = await page.$('button[aria-label="Dismiss"]');
+        if (cancelButton) await cancelButton.click();
+      } else {
+        await addNoteButton.click();
+        await randomDelay(2000, 3000);
+
+        const editor = await page.$('textarea[name="message"]');
+        if (editor) {
+          await editor.type(note, { delay: 50 });
+          await randomDelay(2000, 4000);
+          await page.click('button[aria-label="Send now"]');
+          success = true;
+          logger.info(`Successfully sent request to ${profile.name}`);
+        } else {
+          failureReason = 'note_editor_not_found';
+        }
+      }
     }
-
-    await logAction(CONNECTIONS_SENT_FILE, {
-      name: profile.name,
-      headline: profile.headline,
-      url: profile.url,
-      score,
-      note,
-      status: 'sent',
-    });
-
-    logger.info(`Successfully sent request to ${profile.name}`);
-    return true;
   } catch (error) {
     logger.error(`Failed to send connection request to ${profile.name}`, { error: error.message });
-    return false;
+    failureReason = `error: ${error.message}`;
   }
+
+  /**
+   * Fix 4: Log ALL outcomes (success or failure)
+   */
+  await appendConnection(CONNECTIONS_SENT_FILE, {
+    name: profile.name,
+    headline: profile.headline,
+    url: profile.url,
+    score,
+    note,
+    status: success ? 'sent' : 'failed',
+    failureReason: success ? null : failureReason
+  });
+
+  return success;
 }

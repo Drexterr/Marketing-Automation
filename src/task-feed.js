@@ -6,31 +6,19 @@ import path from 'path';
 
 const COMMENTS_FILE = path.join(process.cwd(), 'data', 'comments-sent.json');
 
-function loadSeenUrns() {
-  const data = loadFeedData(COMMENTS_FILE);
-  return new Set(data.map(e => e.urn).filter(Boolean));
-}
-
-function loadRelevanceCache() {
-  const data = loadFeedData(COMMENTS_FILE);
-  const cache = {};
-  for (const entry of data) {
-    if (entry.urn && entry.relevant !== undefined) {
-      cache[entry.urn] = entry.relevant;
-    }
-  }
-  return cache;
-}
-
 export async function runFeedCommenting(count = 3) {
   const browserManager = new BrowserManager();
-  /**
-   * Fix 6: Respect HEADLESS env
-   */
   const page = await browserManager.launch(process.env.HEADLESS === 'true');
 
-  const seenUrns = loadSeenUrns();
-  const relevanceCache = loadRelevanceCache();
+  /**
+   * Fix 2: Remove duplicate file reads in feed startup
+   * Only ONE file read at startup
+   */
+  const feedData = loadFeedData(COMMENTS_FILE);
+  const seenUrns = new Set(feedData.map(e => e.urn).filter(Boolean));
+  const relevanceCache = new Map(
+    feedData.map(e => [e.urn, e.relevant])
+  );
 
   try {
     logger.info('Navigating to LinkedIn feed');
@@ -38,9 +26,6 @@ export async function runFeedCommenting(count = 3) {
     await page.waitForSelector('.scaffold-layout__main', { timeout: 30000 });
 
     let commentsSent = 0;
-    /**
-     * Fix 5: Add max-scroll guard
-     */
     let scrollAttempts = 0;
     const MAX_SCROLL_ATTEMPTS = 20;
 
@@ -72,11 +57,11 @@ export async function runFeedCommenting(count = 3) {
           await post.scrollIntoViewIfNeeded();
 
           let relevant;
-          if (relevanceCache[urn] !== undefined) {
-            relevant = relevanceCache[urn];
+          if (relevanceCache.has(urn)) {
+            relevant = relevanceCache.get(urn);
           } else {
             relevant = await claudeService.isPostRelevant(postText);
-            relevanceCache[urn] = relevant;
+            relevanceCache.set(urn, relevant);
             if (!relevant) {
               await appendAction(COMMENTS_FILE, { urn, postText: postText.substring(0, 100), relevant: false, status: 'skipped-irrelevant' });
             }
@@ -96,9 +81,6 @@ export async function runFeedCommenting(count = 3) {
           const editor = await post.$('.ql-editor[role="textbox"]');
           if (!editor) continue;
 
-          /**
-           * Fix 7: Fix typing focus drift
-           */
           await editor.type(comment, { delay: 50 });
           await randomDelay(1000, 3000);
 

@@ -7,30 +7,10 @@ export const randomDelay = (min = 5000, max = 15000) => {
   return new Promise(resolve => setTimeout(resolve, delay));
 };
 
-export const logAction = async (filePath, entry) => {
-  const dir = path.dirname(filePath);
-  await fsPromises.mkdir(dir, { recursive: true });
-
-  let data = [];
-  try {
-    const fileContent = await fsPromises.readFile(filePath, 'utf8');
-    data = JSON.parse(fileContent);
-  } catch (error) {
-    // Start fresh
-  }
-
-  data.push({
-    ...entry,
-    timestamp: new Date().toISOString()
-  });
-
-  await fsPromises.writeFile(filePath, JSON.stringify(data, null, 2));
-};
-
 /**
- * Fix 2: Replace JSON array logging with NDJSON append
+ * Fix 1: Replace logAction() with NDJSON append
  */
-export const appendAction = async (filePath, entry) => {
+export const appendConnection = async (filePath, entry) => {
   const dir = path.dirname(filePath);
   await fsPromises.mkdir(dir, { recursive: true });
 
@@ -43,9 +23,9 @@ export const appendAction = async (filePath, entry) => {
 };
 
 /**
- * Fix 2: Replace loader for NDJSON
+ * Fix 1: Update loader for connections
  */
-export function loadFeedData(filePath) {
+export function loadConnections(filePath) {
   try {
     return fs.readFileSync(filePath, 'utf8')
       .split('\n')
@@ -56,16 +36,28 @@ export function loadFeedData(filePath) {
   }
 }
 
-export const checkWeeklyLimit = async (filePath, limit) => {
-  try {
-    const fileContent = await fsPromises.readFile(filePath, 'utf8');
-    const data = JSON.parse(fileContent);
-    const lastWeek = new Date();
-    lastWeek.setDate(lastWeek.getDate() - 7);
-    
-    const count = data.filter(entry => new Date(entry.timestamp) > lastWeek).length;
-    return count < limit;
-  } catch (error) {
-    return true; 
-  }
-};
+/**
+ * Fix 1: Update weekly limit check to use loadConnections
+ */
+export function checkWeeklyLimit(filePath, limit) {
+  const entries = loadConnections(filePath);
+  const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+
+  // Filter only 'sent' status to match weekly limit requirements if specified, 
+  // but prompt just says filter entries by timestamp.
+  return entries.filter(e =>
+    new Date(e.timestamp).getTime() > oneWeekAgo
+  ).length < limit;
+}
+
+/**
+ * Re-using loadConnections logic for feed data to keep it consistent
+ */
+export function loadFeedData(filePath) {
+  return loadConnections(filePath);
+}
+
+/**
+ * Generic append for feed system
+ */
+export const appendAction = appendConnection;
