@@ -7,6 +7,24 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+/**
+ * Private helper to call Claude with a system and user prompt.
+ */
+async function callClaude(systemPrompt, userPrompt, maxTokens = 500) {
+  try {
+    const response = await anthropic.messages.create({
+      model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+    return response.content[0].text;
+  } catch (error) {
+    logger.error('Claude API call failed', { message: error.message });
+    throw error;
+  }
+}
+
 export async function testClaudeConnection() {
   try {
     logger.info('Testing Claude API connection');
