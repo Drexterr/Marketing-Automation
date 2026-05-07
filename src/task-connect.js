@@ -48,6 +48,33 @@ export async function searchAndExtractProfiles(page, keyword) {
   }
 }
 
+async function scrapeProfileDetails(page, profile) {
+  logger.info(`Deep scraping profile: ${profile.name}`);
+  try {
+    await page.goto(profile.url, { waitUntil: 'networkidle' });
+    await randomDelay(5000, 10000);
+
+    const details = await page.evaluate(() => {
+      const about = document.querySelector('#about ~ .pvs-list span[aria-hidden=true]')?.innerText || '';
+      // Open to work badge often has a specific class or alt text in the profile photo area
+      const isOpenToWork = !!document.querySelector('img[alt*="Open to Work"]'); 
+      return { about, isOpenToWork };
+    });
+
+    profile.about = details.about;
+    profile.isOpenToWork = details.isOpenToWork;
+    logger.info(`Scraped details for ${profile.name}: OpenToWork=${profile.isOpenToWork}`);
+  } catch (error) {
+    logger.warn(`Failed to deep scrape ${profile.name}`, { message: error.message });
+  }
+}
+
+function evaluationScoreHeuristic(headline) {
+  const techKeywords = ['engineer', 'developer', 'software', 'tech', 'coding', 'student', 'cs', 'computer science'];
+  const lowerHeadline = headline.toLowerCase();
+  return techKeywords.some(kw => lowerHeadline.includes(kw));
+}
+
 export async function runConnectionWorkflow(page) {
   if (!(await isSessionValid(page))) {
     throw new Error('Session expired or restricted. Aborting run.');
@@ -92,7 +119,16 @@ export async function runConnectionWorkflow(page) {
       logger.info(`Evaluating profile: ${profile.name}`);
       
       try {
-        const evaluation = await claudeService.evaluateConnectionTarget(profile.name, profile.headline, profile.company);
+        // Deep Scrape for high priority keywords or tech roles
+        const isHighPriority = profile.headline.toLowerCase().includes('fresher') || 
+                               profile.headline.toLowerCase().includes('seeking') ||
+                               profile.headline.toLowerCase().includes('looking');
+        
+        if (isHighPriority || evaluationScoreHeuristic(profile.headline)) {
+          await scrapeProfileDetails(page, profile);
+        }
+
+        const evaluation = await claudeService.evaluateConnectionTarget(profile);
         logger.info(`Score: ${evaluation.score} - ${evaluation.reason}`);
 
         if (evaluation.score >= 7) {

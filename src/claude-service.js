@@ -66,27 +66,33 @@ export async function testClaudeConnection() {
   }
 }
 
-export async function evaluateConnectionTarget(name, headline, company = '') {
-  const productName = process.env.PRODUCT_NAME || 'a B2B SaaS product';
+export async function evaluateConnectionTarget(profile) {
+  const productName = process.env.PRODUCT_NAME || 'CUE AI';
   const systemPrompt = `You are a lead generation expert for ${productName}.
+Score LinkedIn profiles 1–10. 
 
-Score LinkedIn profiles 1–10 against this ICP: early-stage technical founders, founding engineers, solo devs building SaaS/tools/AI products.
+TARGET ICP:
+- Tech freshers (CS students, recent grads)
+- People explicitly "Open to Work"
+- Engineers looking for a job switch
+
+Value Proposition:
+CUE AI is an AI-powered interview practice tool that provides real-time assistance so candidates never "get blank" during an interview.
 
 SCORING TIERS:
-9–10: Founding Engineer, CTO at seed-stage startup, open-source maintainer, indie hacker with shipped product
-7–8: Senior engineer at startup (<200 employees), technical co-founder, "Building in public" bio
-5–6: Engineer at mid-size company, product manager with technical background
-3–4: Engineer at enterprise (FAANG, banks), non-technical founder, recruiter
-1–2: Student, HR, sales, real estate, retail, empty headline
-
-HARD REJECT (score ≤ 2): recruiter, staffing, HR, real estate, insurance
+9–10: Has "Open to Work" badge, mentions "seeking opportunities" or "looking for role" in About section, or is a fresher in a tech field.
+7–8: Senior engineer with <3 years experience, technical co-founder of a small startup.
+5–6: General engineer at mid-size company.
+1–2: Recruiter, HR, Sales, Real Estate, or student in non-tech field.
 
 Output ONLY valid JSON: { "score": 1-10, "reason": "one sentence" }`;
 
   const userPrompt = `Profile:
-Name: ${name}
-Headline: ${headline}
-Current Company: ${company || 'Unknown'}`;
+Name: ${profile.name}
+Headline: ${profile.headline}
+Company: ${profile.company || 'Unknown'}
+About: ${profile.about || 'Not available'}
+Open to Work: ${profile.isOpenToWork ? 'YES' : 'NO'}`;
 
   const responseText = await callClaude(systemPrompt, userPrompt);
   try {
