@@ -12,6 +12,7 @@ import { runReplyResponse } from './task-reply-respond.js';
 import { runFollowUpMarking } from './task-followups.js';
 import { generateDashboardSummary } from './analytics.js';
 import { runScheduler } from './scheduler.js';
+import { startDashboard } from './dashboard-server.js';
 import logger from './utils/logger.js';
 
 async function setup() {
@@ -163,6 +164,8 @@ if (command === 'setup') {
     logger.error('Unhandled analytics error', { message: err.message, stack: err.stack });
     process.exit(1);
   });
+} else if (command === 'dashboard') {
+  startDashboard();
 } else if (command === 'schedule') {
   const workflows = [replies, followups, connect, feed, analytics];
   runScheduler(workflows).catch(err => {
