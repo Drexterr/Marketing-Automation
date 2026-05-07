@@ -156,6 +156,34 @@ Response should ONLY contain the comment text.`;
   return await callClaude(systemPrompt, userPrompt, 150);
 }
 
+/**
+ * Phase 3: Generate conversational first message
+ */
+export async function generateFirstMessage(profile) {
+  const systemPrompt = `You are writing a LinkedIn first message for a new connection.
+Rules:
+- Extremely conversational and casual
+- NO pitching, NO selling, NO links
+- Max 400 characters
+- Reference their headline or company contextually
+- Ask one light question to spark conversation
+- Sound like a real human engineer, not an AI or sales rep`;
+
+  const userPrompt = `Profile:
+Name: ${profile.name}
+Headline: ${profile.headline}
+Current Company: ${profile.company || 'not listed'}
+
+Write a short, engaging first message after they accepted my connection request.
+Return ONLY the message text. No quotes.`;
+
+  let message = await callClaude(systemPrompt, userPrompt, 200);
+  if (message.length > 400) {
+    message = message.slice(0, 397) + '...';
+  }
+  return message;
+}
+
 export async function isPostRelevant(postContent) {
   const systemPrompt = `You are a relevance filter. Reply ONLY with valid JSON: { "relevant": true/false, "reason": "one short phrase" }
 
