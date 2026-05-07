@@ -102,7 +102,7 @@ export async function runConnectionWorkflow(page) {
             profile.company
           );
           
-          const sent = await sendConnectionRequest(page, profile, evaluation.score, note);
+          const sent = await sendConnectionRequest(page, profile, evaluation.score, note, keyword);
           if (sent) {
             connectionsSent++;
             await randomDelay(); // Uses new Phase 3 defaults (8-25s)
@@ -139,7 +139,7 @@ export async function runConnectionWorkflow(page) {
   });
 }
 
-async function sendConnectionRequest(page, profile, score, note) {
+async function sendConnectionRequest(page, profile, score, note, keyword) {
   logger.info(`Sending connection request to ${profile.name}`);
   let success = false;
   let failureReason = null;
@@ -205,6 +205,8 @@ async function sendConnectionRequest(page, profile, score, note) {
     note,
     status: success ? 'sent' : 'failed',
     stage: success ? 'request_sent' : null,
+    sourceKeyword: keyword,
+    campaign: 'phase4-outbound',
     failureReason: success ? null : failureReason
   });
 

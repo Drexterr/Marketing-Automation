@@ -7,6 +7,9 @@ import { testClaudeConnection } from './claude-service.js';
 import { runConnectionWorkflow } from './task-connect.js';
 import { runFeedCommenting } from './task-feed.js';
 import { runFirstMessageWorkflow } from './task-first-message.js';
+import { runReplyCheck } from './task-reply-check.js';
+import { runFollowUpMarking } from './task-followups.js';
+import { generateDashboardSummary } from './analytics.js';
 import logger from './utils/logger.js';
 
 async function setup() {
@@ -58,6 +61,7 @@ async function connect() {
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
     await runConnectionWorkflow(page);
+    await generateDashboardSummary();
   } catch (error) {
     logger.error('Connection task failed', { message: error.message, stack: error.stack });
   } finally {
@@ -78,10 +82,41 @@ async function firstMessage() {
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
     await runFirstMessageWorkflow(page);
+    await generateDashboardSummary();
   } catch (error) {
     logger.error('First message task failed', { message: error.message, stack: error.stack });
   } finally {
     await browserManager.close();
+  }
+}
+
+async function replies() {
+  const browserManager = new BrowserManager();
+  try {
+    const page = await browserManager.launch(process.env.HEADLESS === 'true');
+    await runReplyCheck(page);
+    await generateDashboardSummary();
+  } catch (error) {
+    logger.error('Reply check task failed', { message: error.message, stack: error.stack });
+  } finally {
+    await browserManager.close();
+  }
+}
+
+async function followups() {
+  try {
+    await runFollowUpMarking();
+    await generateDashboardSummary();
+  } catch (error) {
+    logger.error('Followups task failed', { message: error.message, stack: error.stack });
+  }
+}
+
+async function analytics() {
+  try {
+    await generateDashboardSummary();
+  } catch (error) {
+    logger.error('Analytics task failed', { message: error.message, stack: error.stack });
   }
 }
 
@@ -110,6 +145,21 @@ if (command === 'setup') {
     logger.error('Unhandled first message error', { message: err.message, stack: err.stack });
     process.exit(1);
   });
+} else if (command === 'replies') {
+  replies().catch((err) => {
+    logger.error('Unhandled replies error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
+} else if (command === 'followups') {
+  followups().catch((err) => {
+    logger.error('Unhandled followups error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
+} else if (command === 'analytics') {
+  analytics().catch((err) => {
+    logger.error('Unhandled analytics error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
 } else {
-  console.log('Usage: node src/index.js [setup|connect|first-message|feed]');
+  console.log('Usage: node src/index.js [setup|connect|first-message|feed|replies|followups|analytics]');
 }

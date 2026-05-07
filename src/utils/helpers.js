@@ -71,6 +71,19 @@ export async function checkDailyLimit(filePath, maxDaily = 10) {
   return todayCount < maxDaily;
 }
 
+export async function appendReviewQueue(entry) {
+  const logFile = path.join(process.cwd(), 'data', 'review-queue.ndjson');
+  const dir = path.dirname(logFile);
+  await fsPromises.mkdir(dir, { recursive: true });
+  
+  const line = JSON.stringify({
+    ...entry,
+    timestamp: new Date().toISOString()
+  }) + '\n';
+  
+  await fsPromises.appendFile(logFile, line);
+}
+
 export async function isSessionValid(page) {
   try {
     const isLogin = await page.$('input[name="session_key"]');
@@ -79,6 +92,16 @@ export async function isSessionValid(page) {
     const hasRestrictedMsg = bodyText.includes('Your account has been restricted');
     
     if (isLogin || isCaptcha || hasRestrictedMsg) {
+      let reason = 'unknown';
+      if (isLogin) reason = 'unusual login challenge';
+      if (isCaptcha) reason = 'captcha detected';
+      if (hasRestrictedMsg) reason = 'account restricted warning';
+      
+      await appendReviewQueue({
+        type: 'safety_warning',
+        reason: reason,
+        profile: 'system'
+      });
       return false;
     }
     return true;
