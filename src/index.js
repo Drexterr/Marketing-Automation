@@ -8,6 +8,7 @@ import { runConnectionWorkflow } from './task-connect.js';
 import { runFeedCommenting } from './task-feed.js';
 import { runFirstMessageWorkflow } from './task-first-message.js';
 import { runReplyCheck } from './task-reply-check.js';
+import { runReplyResponse } from './task-reply-respond.js';
 import { runFollowUpMarking } from './task-followups.js';
 import { generateDashboardSummary } from './analytics.js';
 import { runScheduler } from './scheduler.js';
@@ -96,9 +97,10 @@ async function replies() {
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
     await runReplyCheck(page);
+    await runReplyResponse(page);
     await generateDashboardSummary();
   } catch (error) {
-    logger.error('Reply check task failed', { message: error.message, stack: error.stack });
+    logger.error('Reply workflow failed', { message: error.message, stack: error.stack });
   } finally {
     await browserManager.close();
   }

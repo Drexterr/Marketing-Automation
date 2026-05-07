@@ -190,6 +190,28 @@ Return ONLY the message text. No quotes.`;
   return message;
 }
 
+/**
+ * Phase 4: Generate AI response to incoming message
+ */
+export async function generateReplyResponse(profile, incomingMessage) {
+  const systemPrompt = `You are the founder of CUE AI. 
+CUE AI is an AI-powered interview practice tool that provides real-time assistance (transcription + prompts) so candidates never "get blank" during an interview.
+
+Rules:
+- If they ask "What is it?" or "How it works?", explain the value prop clearly.
+- If they ask about pricing, security, or enterprise, DO NOT answer. Reply with ONLY "ESC_HUMAN".
+- Be supportive, non-salesy, and human.
+- Max 500 characters.
+
+Return ONLY the response text.`;
+
+  const userPrompt = `Contact: ${profile.name}
+Headline: ${profile.headline}
+Incoming Message: ${incomingMessage}`;
+
+  return await callClaude(systemPrompt, userPrompt, 250);
+}
+
 export async function isPostRelevant(postContent) {
   const systemPrompt = `You are a relevance filter. Reply ONLY with valid JSON: { "relevant": true/false, "reason": "one short phrase" }
 
