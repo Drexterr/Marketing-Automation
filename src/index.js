@@ -9,6 +9,7 @@ import { runFeedCommenting } from './task-feed.js';
 import { runFirstMessageWorkflow } from './task-first-message.js';
 import { runReplyCheck } from './task-reply-check.js';
 import { runReplyResponse } from './task-reply-respond.js';
+import { runPostContent } from './task-post-content.js';
 import { runFollowUpMarking } from './task-followups.js';
 import { generateDashboardSummary } from './analytics.js';
 import { runScheduler } from './scheduler.js';
@@ -124,6 +125,18 @@ async function analytics() {
   }
 }
 
+async function post() {
+  const browserManager = new BrowserManager();
+  try {
+    const page = await browserManager.launch(process.env.HEADLESS === 'true');
+    await runPostContent(page);
+  } catch (error) {
+    logger.error('Post task failed', { message: error.message, stack: error.stack });
+  } finally {
+    await browserManager.close();
+  }
+}
+
 const command = process.argv[2];
 if (command === 'setup') {
   // Fix 3: Fix unhandled async in CLI entry
@@ -142,6 +155,11 @@ if (command === 'setup') {
 } else if (command === 'feed') {
   feed().catch((err) => {
     logger.error('Unhandled feed error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
+} else if (command === 'post') {
+  post().catch((err) => {
+    logger.error('Unhandled post error', { message: err.message, stack: err.stack });
     process.exit(1);
   });
 } else if (command === 'first-message') {
@@ -167,11 +185,11 @@ if (command === 'setup') {
 } else if (command === 'dashboard') {
   startDashboard();
 } else if (command === 'schedule') {
-  const workflows = [replies, followups, connect, feed, analytics];
+  const workflows = [replies, followups, connect, feed, post, analytics];
   runScheduler(workflows).catch(err => {
     logger.error('Scheduler crashed', { message: err.message });
     process.exit(1);
   });
 } else {
-  console.log('Usage: node src/index.js [setup|connect|first-message|feed|replies|followups|analytics|schedule]');
+  console.log('Usage: node src/index.js [setup|connect|first-message|feed|post|replies|followups|analytics|schedule|dashboard]');
 }

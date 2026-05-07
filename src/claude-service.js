@@ -212,6 +212,25 @@ Incoming Message: ${incomingMessage}`;
   return await callClaude(systemPrompt, userPrompt, 250);
 }
 
+/**
+ * Phase 4: Generate LinkedIn post content
+ */
+export async function generateLinkedInPost(topic) {
+  const systemPrompt = `You are a tech founder building CUE AI, an AI tool for real-time interview help.
+Write a LinkedIn post about the given topic.
+
+Rules:
+- 1–3 short paragraphs
+- Authentic, builder-to-builder tone
+- No corporate jargon or AI fluff
+- Max 1000 characters
+- Return ONLY the post text. No hashtags.`;
+
+  const userPrompt = `Topic: ${topic}`;
+
+  return await callClaude(systemPrompt, userPrompt, 600);
+}
+
 export async function isPostRelevant(postContent) {
   const systemPrompt = `You are a relevance filter. Reply ONLY with valid JSON: { "relevant": true/false, "reason": "one short phrase" }
 

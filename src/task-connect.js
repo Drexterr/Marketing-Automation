@@ -239,6 +239,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
     url: profile.url,
     score,
     note,
+    variant: Math.random() < 0.5 ? 'A' : 'B',
     status: success ? 'sent' : 'failed',
     stage: success ? 'request_sent' : null,
     sourceKeyword: keyword,

@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay } from './utils/helpers.js';
+import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay, sendAlert } from './utils/helpers.js';
 import { generateReplyResponse } from './claude-service.js';
 import path from 'path';
 
@@ -52,6 +52,7 @@ export async function runReplyResponse(page) {
           profile: profile.url,
           reason: 'AI requested human escalation for message: ' + lastMessageText.substring(0, 100)
         });
+        await sendAlert(`🔥 *Hot Lead*! AI escalated ${profile.name} to human review: "${lastMessageText.substring(0, 50)}..."`);
       } else {
         const editor = await page.$('.msg-form__contenteditable[role="textbox"]');
         if (editor) {

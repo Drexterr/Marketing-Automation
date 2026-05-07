@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
+import { sendAlert } from './alerts.js';
+
 export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
 export const randomDelay = (min = 8000, max = 25000) => {
@@ -102,6 +104,7 @@ export async function isSessionValid(page) {
         reason: reason,
         profile: 'system'
       });
+      await sendAlert(`LinkedIn security trigger: ${reason}. System paused.`);
       return false;
     }
     return true;
