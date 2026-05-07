@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { randomDelay, appendConnection, checkWeeklyLimit } from './utils/helpers.js';
+import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import path from 'path';
 
@@ -49,20 +49,32 @@ export async function searchAndExtractProfiles(page, keyword) {
 }
 
 export async function runConnectionWorkflow(page) {
+  if (!(await isSessionValid(page))) {
+    throw new Error('Session expired or restricted. Aborting run.');
+  }
+
   const keywords = (process.env.TARGET_KEYWORDS || '').split(',').map(k => k.trim());
-  const limit = parseInt(process.env.WEEKLY_CONNECTION_LIMIT || '50', 10);
+  const weeklyLimit = getDynamicWeeklyLimit();
+  const dailyMax = randomBetween(8, 12); // Daily max connections 8-12
+
+  logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Max = ${dailyMax}`);
 
   for (const keyword of keywords) {
-    if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit)) {
-      logger.warn('Weekly connection limit reached. Stopping.');
+    if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
+      logger.warn('Dynamic weekly connection limit reached. Stopping.');
+      break;
+    }
+
+    if (!checkDailyLimit(CONNECTIONS_SENT_FILE, dailyMax)) {
+      logger.warn(`Daily connection limit (${dailyMax}) reached. Spreading actions. Stopping for today.`);
       break;
     }
 
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
-      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, limit)) {
-        logger.warn('Weekly connection limit reached. Stopping.');
+      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit) || !checkDailyLimit(CONNECTIONS_SENT_FILE, dailyMax)) {
+        logger.warn('Limits reached during processing. Stopping.');
         return;
       }
 
@@ -80,21 +92,18 @@ export async function runConnectionWorkflow(page) {
           );
           
           const sent = await sendConnectionRequest(page, profile, evaluation.score, note);
-          if (sent) await randomDelay(15000, 30000);
+          if (sent) await randomDelay(); // Uses new Phase 3 defaults (8-25s)
         } else {
           logger.info(`Skipping ${profile.name} (low score)`);
-          await randomDelay(2000, 5000);
+          await randomDelay(3000, 7000);
         }
       } catch (error) {
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
       }
     }
 
-    /**
-     * Fix 3: Add delay between keyword searches
-     */
     logger.info(`Finished keyword "${keyword}". Waiting before next search...`);
-    await randomDelay(5000, 15000);
+    await randomDelay(10000, 20000);
   }
 }
 
@@ -161,7 +170,8 @@ async function sendConnectionRequest(page, profile, score, note) {
     url: profile.url,
     score,
     note,
-    status: success ? 'sent' : 'failed',
+    status: success ? 'pending' : 'failed',
+    stage: success ? 'connected' : null,
     failureReason: success ? null : failureReason
   });
 
