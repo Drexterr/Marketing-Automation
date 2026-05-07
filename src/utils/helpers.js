@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
-export const randomDelay = (min = 5000, max = 15000) => {
-  const delay = Math.floor(Math.random() * (max - min + 1) + min);
-  return new Promise(resolve => setTimeout(resolve, delay));
+export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
+
+export const randomDelay = (min = 8000, max = 25000) => {
+  return new Promise(resolve => setTimeout(resolve, randomBetween(min, max)));
 };
 
 /**
@@ -21,6 +22,82 @@ export const appendConnection = async (filePath, entry) => {
 
   await fsPromises.appendFile(filePath, line);
 };
+
+export function getSystemState() {
+  const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
+  try {
+    return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  } catch {
+    return { firstRunDate: new Date().toISOString(), currentWeek: 1 };
+  }
+}
+
+export function updateSystemState(updates) {
+  const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
+  const currentState = getSystemState();
+  const newState = { ...currentState, ...updates };
+  
+  if (!currentState.firstRunDate) {
+    newState.firstRunDate = new Date().toISOString();
+  }
+
+  // Calculate current week based on firstRunDate
+  const firstRun = new Date(newState.firstRunDate);
+  const now = new Date();
+  const diffDays = Math.floor((now - firstRun) / (1000 * 60 * 60 * 24));
+  newState.currentWeek = Math.floor(diffDays / 7) + 1;
+
+  fs.writeFileSync(stateFile, JSON.stringify(newState, null, 2));
+  return newState;
+}
+
+export function getDynamicWeeklyLimit() {
+  const state = updateSystemState({}); // Ensure state is fresh
+  const limits = [25, 35, 50]; // Week 1, 2, 3+
+  return limits[Math.min(state.currentWeek - 1, limits.length - 1)];
+}
+
+export function checkDailyLimit(filePath, maxDaily = 10) {
+  const entries = loadConnections(filePath);
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const todayCount = entries.filter(e => 
+    (e.status === 'sent' || e.status === 'accepted') && 
+    new Date(e.timestamp).getTime() > startOfDay.getTime()
+  ).length;
+
+  return todayCount < maxDaily;
+}
+
+export async function isSessionValid(page) {
+  try {
+    const isLogin = await page.$('input[name="session_key"]');
+    const isCaptcha = await page.$('#captcha-internal'); // Common ID for LinkedIn CAPTCHA
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    const hasRestrictedMsg = bodyText.includes('Your account has been restricted');
+    
+    if (isLogin || isCaptcha || hasRestrictedMsg) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateConnectionRecord(filePath, url, updates) {
+  const entries = loadConnections(filePath);
+  const updatedEntries = entries.map(e => {
+    if (e.url === url) {
+      return { ...e, ...updates };
+    }
+    return e;
+  });
+  
+  // Re-write the file
+  await fsPromises.writeFile(filePath, updatedEntries.map(e => JSON.stringify(e)).join('\n') + '\n');
+}
 
 /**
  * Fix 1: Update loader for connections
@@ -46,7 +123,7 @@ export function checkWeeklyLimit(filePath, limit) {
   // Filter only 'sent' status to match weekly limit requirements if specified, 
   // but prompt just says filter entries by timestamp.
   return entries.filter(e =>
-    new Date(e.timestamp).getTime() > oneWeekAgo
+    e.status === 'sent' && new Date(e.timestamp).getTime() > oneWeekAgo
   ).length < limit;
 }
 
