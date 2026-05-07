@@ -1,5 +1,6 @@
 import logger from './utils/logger.js';
-import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay, sendAlert } from './utils/helpers.js';
+import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay } from './utils/helpers.js';
+import { sendAlert } from './utils/alerts.js';
 import { generateReplyResponse } from './claude-service.js';
 import path from 'path';
 

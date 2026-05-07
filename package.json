@@ -15,12 +15,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "playwright": "^1.44.0",
-    "dotenv": "^16.4.5",
     "chalk": "^5.3.0",
-    "ora": "^8.0.1",
     "commander": "^12.1.0",
-    "winston": "^3.13.0",
-    "node-cron": "^3.0.3"
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "node-cron": "^3.0.3",
+    "ora": "^8.0.1",
+    "playwright": "^1.44.0",
+    "winston": "^3.13.0"
   }
 }
