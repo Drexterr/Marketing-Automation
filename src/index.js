@@ -6,6 +6,7 @@ import { BrowserManager } from './browser.js';
 import { testClaudeConnection } from './claude-service.js';
 import { runConnectionWorkflow } from './task-connect.js';
 import { runFeedCommenting } from './task-feed.js';
+import { runFirstMessageWorkflow } from './task-first-message.js';
 import logger from './utils/logger.js';
 
 async function setup() {
@@ -72,6 +73,18 @@ async function feed() {
   }
 }
 
+async function firstMessage() {
+  const browserManager = new BrowserManager();
+  try {
+    const page = await browserManager.launch(process.env.HEADLESS === 'true');
+    await runFirstMessageWorkflow(page);
+  } catch (error) {
+    logger.error('First message task failed', { message: error.message, stack: error.stack });
+  } finally {
+    await browserManager.close();
+  }
+}
+
 const command = process.argv[2];
 if (command === 'setup') {
   // Fix 3: Fix unhandled async in CLI entry
@@ -92,6 +105,11 @@ if (command === 'setup') {
     logger.error('Unhandled feed error', { message: err.message, stack: err.stack });
     process.exit(1);
   });
+} else if (command === 'first-message') {
+  firstMessage().catch((err) => {
+    logger.error('Unhandled first message error', { message: err.message, stack: err.stack });
+    process.exit(1);
+  });
 } else {
-  console.log('Usage: node src/index.js [setup|connect|feed]');
+  console.log('Usage: node src/index.js [setup|connect|first-message|feed]');
 }

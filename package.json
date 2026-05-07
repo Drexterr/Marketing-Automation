@@ -8,6 +8,7 @@
     "start": "node index.js",
     "connect": "node index.js connect",
     "messages": "node index.js messages",
+    "first-message": "node index.js first-message",
     "feed": "node index.js feed",
     "setup": "node src/index.js setup",
     "test": "node --test src/**/*.test.js"
