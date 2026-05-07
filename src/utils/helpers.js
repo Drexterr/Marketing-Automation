@@ -87,6 +87,19 @@ export async function isSessionValid(page) {
   }
 }
 
+export async function logSessionSummary(summary) {
+  const logFile = path.join(process.cwd(), 'logs', 'session-summary.ndjson');
+  const dir = path.dirname(logFile);
+  await fsPromises.mkdir(dir, { recursive: true });
+  
+  const line = JSON.stringify({
+    ...summary,
+    timestamp: new Date().toISOString()
+  }) + '\n';
+  
+  await fsPromises.appendFile(logFile, line);
+}
+
 export async function updateConnectionRecord(filePath, url, updates) {
   const entries = loadConnections(filePath);
   const updatedEntries = entries.map(e => {
@@ -96,8 +109,16 @@ export async function updateConnectionRecord(filePath, url, updates) {
     return e;
   });
   
-  // Re-write the file
-  await fsPromises.writeFile(filePath, updatedEntries.map(e => JSON.stringify(e)).join('\n') + '\n');
+  const content = updatedEntries.map(e => JSON.stringify(e)).join('\n') + '\n';
+  const tempPath = `${filePath}.tmp`;
+  
+  try {
+    await fsPromises.writeFile(tempPath, content);
+    await fsPromises.rename(tempPath, filePath);
+  } catch (error) {
+    try { await fsPromises.unlink(tempPath); } catch {}
+    throw error;
+  }
 }
 
 /**

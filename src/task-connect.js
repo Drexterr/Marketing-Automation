@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid } from './utils/helpers.js';
+import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import path from 'path';
 
@@ -57,6 +57,10 @@ export async function runConnectionWorkflow(page) {
   const weeklyLimit = await getDynamicWeeklyLimit();
   const dailyCap = 8; // Required hard cap from audit
 
+  let connectionsSent = 0;
+  let failed = 0;
+  let dailyLimitHit = false;
+
   logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Cap = ${dailyCap}`);
 
   for (const keyword of keywords) {
@@ -67,17 +71,23 @@ export async function runConnectionWorkflow(page) {
 
     if (!(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
       logger.info('Daily connection cap reached — stopping session');
+      dailyLimitHit = true;
       break;
     }
 
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
-      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit) || !(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
-        logger.warn('Limits reached during processing. Stopping.');
-        return;
+      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
+        logger.warn('Weekly limit reached during processing. Stopping.');
+        break;
       }
-// ... rest of evaluation logic ...
+      
+      if (!(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
+        logger.info('Daily cap reached during processing. Stopping.');
+        dailyLimitHit = true;
+        break;
+      }
 
       logger.info(`Evaluating profile: ${profile.name}`);
       
@@ -93,19 +103,40 @@ export async function runConnectionWorkflow(page) {
           );
           
           const sent = await sendConnectionRequest(page, profile, evaluation.score, note);
-          if (sent) await randomDelay(); // Uses new Phase 3 defaults (8-25s)
+          if (sent) {
+            connectionsSent++;
+            await randomDelay(); // Uses new Phase 3 defaults (8-25s)
+          } else {
+            failed++;
+          }
         } else {
           logger.info(`Skipping ${profile.name} (low score)`);
           await randomDelay(3000, 7000);
         }
       } catch (error) {
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
+        failed++;
       }
     }
+    
+    if (dailyLimitHit || !checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) break;
 
     logger.info(`Finished keyword "${keyword}". Waiting before next search...`);
     await randomDelay(10000, 20000);
   }
+
+  // Summary logic
+  const entries = loadConnections(CONNECTIONS_SENT_FILE);
+  const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  const sentInLastWeek = entries.filter(e => e.status === 'sent' && new Date(e.timestamp).getTime() > oneWeekAgo).length;
+
+  await logSessionSummary({
+    runType: "connections",
+    connectionsSent,
+    failed,
+    dailyLimitHit,
+    weeklyLimitRemaining: Math.max(0, weeklyLimit - sentInLastWeek)
+  });
 }
 
 async function sendConnectionRequest(page, profile, score, note) {
