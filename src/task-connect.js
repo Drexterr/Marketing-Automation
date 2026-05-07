@@ -54,10 +54,10 @@ export async function runConnectionWorkflow(page) {
   }
 
   const keywords = (process.env.TARGET_KEYWORDS || '').split(',').map(k => k.trim());
-  const weeklyLimit = getDynamicWeeklyLimit();
-  const dailyMax = randomBetween(8, 12); // Daily max connections 8-12
+  const weeklyLimit = await getDynamicWeeklyLimit();
+  const dailyCap = 8; // Required hard cap from audit
 
-  logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Max = ${dailyMax}`);
+  logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Cap = ${dailyCap}`);
 
   for (const keyword of keywords) {
     if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
@@ -65,18 +65,19 @@ export async function runConnectionWorkflow(page) {
       break;
     }
 
-    if (!checkDailyLimit(CONNECTIONS_SENT_FILE, dailyMax)) {
-      logger.warn(`Daily connection limit (${dailyMax}) reached. Spreading actions. Stopping for today.`);
+    if (!(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
+      logger.info('Daily connection cap reached — stopping session');
       break;
     }
 
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
-      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit) || !checkDailyLimit(CONNECTIONS_SENT_FILE, dailyMax)) {
+      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit) || !(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
         logger.warn('Limits reached during processing. Stopping.');
         return;
       }
+// ... rest of evaluation logic ...
 
       logger.info(`Evaluating profile: ${profile.name}`);
       
@@ -167,11 +168,12 @@ async function sendConnectionRequest(page, profile, score, note) {
   await appendConnection(CONNECTIONS_SENT_FILE, {
     name: profile.name,
     headline: profile.headline,
+    company: profile.company,
     url: profile.url,
     score,
     note,
-    status: success ? 'pending' : 'failed',
-    stage: success ? 'connected' : null,
+    status: success ? 'sent' : 'failed',
+    stage: success ? 'request_sent' : null,
     failureReason: success ? null : failureReason
   });
 

@@ -26,11 +26,12 @@ export async function checkAcceptedConnections(page) {
     let acceptedCount = 0;
 
     for (const entry of entries) {
-      if (entry.status === 'pending') {
+      if (entry.status === 'sent') {
         const isAccepted = recentConnections.some(url => url.includes(entry.url) || entry.url.includes(url));
         if (isAccepted) {
           await updateConnectionRecord(CONNECTIONS_SENT_FILE, entry.url, {
             status: 'accepted',
+            stage: 'connected',
             acceptedAt: new Date().toISOString()
           });
           acceptedCount++;

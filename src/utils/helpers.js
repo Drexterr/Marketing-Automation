@@ -23,18 +23,19 @@ export const appendConnection = async (filePath, entry) => {
   await fsPromises.appendFile(filePath, line);
 };
 
-export function getSystemState() {
+export async function getSystemState() {
   const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
   try {
-    return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const data = await fsPromises.readFile(stateFile, 'utf8');
+    return JSON.parse(data);
   } catch {
     return { firstRunDate: new Date().toISOString(), currentWeek: 1 };
   }
 }
 
-export function updateSystemState(updates) {
+export async function updateSystemState(updates) {
   const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
-  const currentState = getSystemState();
+  const currentState = await getSystemState();
   const newState = { ...currentState, ...updates };
   
   if (!currentState.firstRunDate) {
@@ -47,17 +48,17 @@ export function updateSystemState(updates) {
   const diffDays = Math.floor((now - firstRun) / (1000 * 60 * 60 * 24));
   newState.currentWeek = Math.floor(diffDays / 7) + 1;
 
-  fs.writeFileSync(stateFile, JSON.stringify(newState, null, 2));
+  await fsPromises.writeFile(stateFile, JSON.stringify(newState, null, 2));
   return newState;
 }
 
-export function getDynamicWeeklyLimit() {
-  const state = updateSystemState({}); // Ensure state is fresh
-  const limits = [25, 35, 50]; // Week 1, 2, 3+
+export async function getDynamicWeeklyLimit() {
+  const state = await updateSystemState({}); // Ensure state is fresh
+  const limits = [25, 30, 35, 40, 50]; // Week 1, 2, 3, 4, 5+ (Safer progression)
   return limits[Math.min(state.currentWeek - 1, limits.length - 1)];
 }
 
-export function checkDailyLimit(filePath, maxDaily = 10) {
+export async function checkDailyLimit(filePath, maxDaily = 10) {
   const entries = loadConnections(filePath);
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
