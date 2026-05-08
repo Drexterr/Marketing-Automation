@@ -1,0 +1,34 @@
+<h2>Automation Control Layout</h2>
+<p class="subtitle">Where should the main automation toggles live?</p>
+
+<div class="options">
+  <div class="option" data-choice="dashboard" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Command Center (Landing Page)</h3>
+      <p>Toggles are the first thing you see when logging in. Combined with live status indicators and the "Emergency Stop".</p>
+      <div class="mockup" style="padding: 10px;">
+        <div style="font-weight: bold; border-bottom: 1px solid #ccc; margin-bottom: 5px;">Dashboard</div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+           <div class="placeholder" style="width: 45%; height: 30px;">Toggle: Connect</div>
+           <div class="placeholder" style="width: 45%; height: 30px;">Toggle: Messaging</div>
+           <div class="placeholder" style="width: 95%; height: 40px; background: #fee;">EMERGENCY STOP</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="dedicated" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Dedicated "Automation" Page</h3>
+      <p>A separate tab for all configuration. Keeps the main dashboard focused on data, analytics, and activity logs.</p>
+      <div class="mockup" style="padding: 10px;">
+        <div style="display: flex; gap: 5px; font-size: 10px;">
+          <span>Overview</span> | <span style="font-weight: bold;">Automation</span> | <span>Logs</span>
+        </div>
+        <div class="placeholder" style="height: 50px; margin-top: 5px;">Toggle List...</div>
+      </div>
+    </div>
+  </div>
+</div>

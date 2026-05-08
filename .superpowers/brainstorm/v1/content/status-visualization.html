@@ -1,0 +1,36 @@
+<h2>Live Workflow Status</h2>
+<p class="subtitle">How should we visualize the active automation state (e.g., "scheduler is running")?</p>
+
+<div class="options">
+  <div class="option" data-choice="global" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Global Indicator (Sidebar)</h3>
+      <p>A small "pulse" or badge in the sidebar navigation. Always visible no matter which page you are on.</p>
+      <div class="mockup" style="padding: 10px;">
+         <div style="display: flex;">
+           <div class="mock-sidebar" style="width: 30%;">
+             <div style="font-size: 8px; margin-bottom: 5px;">• Automation <span style="color: green; font-size: 6px;">● RUNNING</span></div>
+             <div style="font-size: 8px;">• Inbox</div>
+           </div>
+           <div class="mock-content" style="flex: 1;"></div>
+         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="dashboard-only" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Dashboard Grid Item</h3>
+      <p>Visible only on the main Overview page as a larger card with more detail (last run, next run, success rate).</p>
+      <div class="mockup" style="padding: 10px;">
+        <div class="card" style="width: 100%; border: 1px solid #ccc; padding: 5px;">
+           <div style="font-weight: bold; font-size: 10px;">Scheduler Status</div>
+           <div style="color: green; font-size: 12px;">ACTIVE</div>
+           <div style="font-size: 8px; color: #666;">Last run: 2m ago</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
