@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
 import { sendAlert } from './alerts.js';
+import { RuntimeStateService } from '../../backend-api/services/RuntimeStateService.js';
 
 export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
@@ -26,21 +27,21 @@ export const appendConnection = async (filePath, entry) => {
 };
 
 export async function getSystemState() {
-  const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
-  try {
-    const data = await fsPromises.readFile(stateFile, 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return { firstRunDate: new Date().toISOString(), currentWeek: 1 };
+  const state = RuntimeStateService.getFlag('system_state') || {};
+  if (!state.firstRunDate) {
+    state.firstRunDate = new Date().toISOString();
   }
+  if (!state.currentWeek) {
+    state.currentWeek = 1;
+  }
+  return state;
 }
 
 export async function updateSystemState(updates) {
-  const stateFile = path.join(process.cwd(), 'data', 'system-state.json');
   const currentState = await getSystemState();
   const newState = { ...currentState, ...updates };
   
-  if (!currentState.firstRunDate) {
+  if (!newState.firstRunDate) {
     newState.firstRunDate = new Date().toISOString();
   }
 
@@ -50,7 +51,7 @@ export async function updateSystemState(updates) {
   const diffDays = Math.floor((now - firstRun) / (1000 * 60 * 60 * 24));
   newState.currentWeek = Math.floor(diffDays / 7) + 1;
 
-  await fsPromises.writeFile(stateFile, JSON.stringify(newState, null, 2));
+  RuntimeStateService.setFlag('system_state', newState);
   return newState;
 }
 
