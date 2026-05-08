@@ -1,6 +1,7 @@
 import logger from './utils/logger.js';
 import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections, humanType, humanClick, isWithinOperatingHours } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
 
 const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
@@ -96,6 +97,11 @@ export async function runConnectionWorkflow(page) {
   logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Cap = ${dailyCap}`);
 
   for (const keyword of keywords) {
+    if (RuntimeStateService.shouldStop('connect')) {
+      logger.info('Connect task interrupted by system signal');
+      return;
+    }
+
     if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
       logger.warn('Dynamic weekly connection limit reached. Stopping.');
       break;
@@ -110,6 +116,11 @@ export async function runConnectionWorkflow(page) {
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
+      if (RuntimeStateService.shouldStop('connect')) {
+        logger.info('Connect task interrupted by system signal');
+        return;
+      }
+
       if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
         logger.warn('Weekly limit reached during processing. Stopping.');
         break;
@@ -181,6 +192,10 @@ export async function runConnectionWorkflow(page) {
 }
 
 async function sendConnectionRequest(page, profile, score, note, keyword) {
+  if (RuntimeStateService.shouldStop('connect')) {
+    logger.info('Connect task interrupted by system signal');
+    return false;
+  }
   logger.info(`Sending connection request to ${profile.name}`);
   let success = false;
   let failureReason = null;

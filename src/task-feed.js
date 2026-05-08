@@ -2,6 +2,7 @@ import { BrowserManager } from './browser.js';
 import * as claudeService from './claude-service.js';
 import { randomDelay, appendAction, loadFeedData, humanType, humanClick, humanScroll, isWithinOperatingHours } from './utils/helpers.js';
 import logger from './utils/logger.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
 
 const COMMENTS_FILE = path.join(process.cwd(), 'data', 'comments-sent.json');
@@ -36,10 +37,20 @@ export async function runFeedCommenting(count = 3) {
     const MAX_SCROLL_ATTEMPTS = 20;
 
     while (commentsSent < count && scrollAttempts < MAX_SCROLL_ATTEMPTS) {
+      if (RuntimeStateService.shouldStop('feed')) {
+        logger.info('Feed task interrupted by system signal');
+        return;
+      }
+
       const posts = await page.$$('.feed-shared-update-v2');
       let newPostsFound = false;
 
       for (const post of posts) {
+        if (RuntimeStateService.shouldStop('feed')) {
+          logger.info('Feed task interrupted by system signal');
+          return;
+        }
+
         if (commentsSent >= count) break;
 
         const urn = await post.getAttribute('data-urn');
