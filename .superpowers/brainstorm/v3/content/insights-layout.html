@@ -1,0 +1,32 @@
+<h2>Phase 3: Insights & Management</h2>
+<p class="subtitle">Design decisions for Activity Feed, Analytics, and Prompt Management.</p>
+
+<div class="options">
+  <div class="option" data-choice="integrated-feed" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Integrated Feed & Analytics</h3>
+      <p>A single "Overview" page that shows top-level charts followed by a stream of activity events.</p>
+      <div class="mockup" style="padding: 10px;">
+        <div style="font-weight: bold; border-bottom: 1px solid #ccc; margin-bottom: 5px;">Dashboard</div>
+        <div class="placeholder" style="height: 40px; margin-bottom: 5px;">[CHART: Requests Sent]</div>
+        <div class="placeholder" style="height: 20px; margin-bottom: 2px;">• Connect: Rahul Sharma</div>
+        <div class="placeholder" style="height: 20px;">• Message: Priya V.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="separate-pages" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Separate Dedicated Pages</h3>
+      <p>A dedicated "Activity Feed" page for the raw stream, and an "Analytics" page for deep-dive charts.</p>
+      <div class="mockup" style="padding: 10px;">
+        <div style="display: flex; gap: 5px; font-size: 10px;">
+          <span>Overview</span> | <span style="font-weight: bold;">Activity</span> | <span>Analytics</span>
+        </div>
+        <div class="placeholder" style="height: 60px; margin-top: 5px;">Full screen feed list...</div>
+      </div>
+    </div>
+  </div>
+</div>
