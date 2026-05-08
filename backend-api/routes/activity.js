@@ -1,17 +1,15 @@
 import express from 'express';
-import { NdjsonRepository } from '../../shared/repositories/NdjsonRepository.js';
-import path from 'path';
+import { ActivityRepository } from '../../shared/repositories/ActivityRepository.js';
 
 const router = express.Router();
+const activityRepo = new ActivityRepository();
 
 router.get('/', async (req, res) => {
   try {
-    const activityRepo = new NdjsonRepository(path.join('data', 'activity.ndjson'));
-    const activities = await activityRepo.findAll();
-    // Return last 50 events, reversed (newest first)
-    res.json(activities.slice(-50).reverse());
+    const activities = activityRepo.getRecent(50);
+    res.json(activities);
   } catch (error) {
-    res.json([]); // Return empty if file doesn't exist yet
+    res.json([]);
   }
 });
 
