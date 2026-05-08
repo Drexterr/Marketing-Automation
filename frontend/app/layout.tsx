@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { cn } from "@/lib/utils";
+import { QueryProvider } from "@/components/providers/query-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,12 +34,14 @@ export default function RootLayout({
           geistMono.variable
         )}
       >
-        <Sidebar />
-        <main className="flex-1 h-screen overflow-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/20 via-background to-background p-8">
-          <div className="max-w-7xl mx-auto w-full">
-            {children}
-          </div>
-        </main>
+        <QueryProvider>
+          <Sidebar />
+          <main className="flex-1 h-screen overflow-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/20 via-background to-background p-8">
+            <div className="max-w-7xl mx-auto w-full">
+              {children}
+            </div>
+          </main>
+        </QueryProvider>
       </body>
     </html>
   );
