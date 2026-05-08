@@ -9,6 +9,26 @@ export const getSystemState = async () => {
   return data;
 };
 
+export const getAnalytics = async () => {
+  const { data } = await api.get('/analytics');
+  return data;
+};
+
+export const getActivity = async () => {
+  const { data } = await api.get('/activity');
+  return data;
+};
+
+export const getPrompts = async () => {
+  const { data } = await api.get('/prompts');
+  return data;
+};
+
+export const updatePrompts = async (prompts: any) => {
+  const { data } = await api.post('/prompts', prompts);
+  return data;
+};
+
 export const toggleModule = async (module: string, enabled: boolean) => {
   const { data } = await api.post(`/toggle/${module}`, { enabled });
   return data;
