@@ -1,0 +1,22 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
+});
+
+export const getSystemState = async () => {
+  const { data } = await api.get('/state');
+  return data;
+};
+
+export const toggleModule = async (module: string, enabled: boolean) => {
+  const { data } = await api.post(`/toggle/${module}`, { enabled });
+  return data;
+};
+
+export const emergencyStop = async () => {
+  const { data } = await api.post('/stop');
+  return data;
+};
+
+export default api;
