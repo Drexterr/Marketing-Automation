@@ -14,15 +14,23 @@ export class BrowserManager {
 
   async launch(headless = true) {
     logger.info(`Launching browser (headless: ${headless})`);
-    this.browser = await chromium.launch({ 
+    this.browser = await chromium.launch({
       headless,
-      args: ['--disable-blink-features=AutomationControlled'] 
+      args: ['--disable-blink-features=AutomationControlled']
     });
 
+    const PROFILES = [
+      { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1280, height: 800 } },
+      { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', viewport: { width: 1366, height: 768 } },
+      { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1440, height: 900 } },
+      { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1512, height: 982 } },
+    ];
+    const profile = PROFILES[Math.floor(Math.random() * PROFILES.length)];
+    logger.info(`Browser profile: ${profile.viewport.width}x${profile.viewport.height}`);
+
     const options = {
-      // Fix 2: Anti-detection stealth baseline
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 800 }
+      userAgent: profile.userAgent,
+      viewport: profile.viewport
     };
 
     if (fs.existsSync(this.sessionPath)) {

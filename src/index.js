@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { BrowserManager } from './browser.js';
-import { testClaudeConnection } from './claude-service.js';
+import { testClaudeConnection, closeWebClient } from './claude-service.js';
 import { runConnectionWorkflow } from './task-connect.js';
 import { runFeedCommenting } from './task-feed.js';
 import { runFirstMessageWorkflow } from './task-first-message.js';
@@ -193,3 +193,6 @@ if (command === 'setup') {
 } else {
   console.log('Usage: node src/index.js [setup|connect|first-message|feed|post|replies|followups|analytics|schedule|dashboard]');
 }
+
+// Close the Claude web browser (no-op when CLAUDE_MODE=cli)
+process.on('exit', () => closeWebClient());

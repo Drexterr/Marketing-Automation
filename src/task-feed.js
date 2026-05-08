@@ -1,6 +1,6 @@
 import { BrowserManager } from './browser.js';
 import * as claudeService from './claude-service.js';
-import { randomDelay, appendAction, loadFeedData } from './utils/helpers.js';
+import { randomDelay, appendAction, loadFeedData, humanType, humanClick, humanScroll, isWithinOperatingHours } from './utils/helpers.js';
 import logger from './utils/logger.js';
 import path from 'path';
 
@@ -14,6 +14,12 @@ export async function runFeedCommenting(count = 3) {
    * Fix 2: Remove duplicate file reads in feed startup
    * Only ONE file read at startup
    */
+  if (!isWithinOperatingHours()) {
+    logger.warn('Outside operating hours (9am–8pm). Skipping feed run.');
+    await browserManager.close();
+    return;
+  }
+
   const feedData = loadFeedData(COMMENTS_FILE);
   const seenUrns = new Set(feedData.map(e => e.urn).filter(Boolean));
   const relevanceCache = new Map(
@@ -75,18 +81,18 @@ export async function runFeedCommenting(count = 3) {
           const commentButton = await post.$('button:has-text("Comment")');
           if (!commentButton) continue;
           
-          await commentButton.click();
+          await humanClick(commentButton);
           await randomDelay(1000, 2000);
 
           const editor = await post.$('.ql-editor[role="textbox"]');
           if (!editor) continue;
 
-          await editor.type(comment, { delay: 50 });
+          await humanType(editor, comment);
           await randomDelay(1000, 3000);
 
           const postButton = await post.$('button.comments-comment-box__submit-button');
           if (postButton) {
-            await postButton.click();
+            await humanClick(postButton);
             logger.info('Successfully posted comment');
 
             await appendAction(COMMENTS_FILE, {
@@ -109,8 +115,7 @@ export async function runFeedCommenting(count = 3) {
 
       if (commentsSent < count && scrollAttempts < MAX_SCROLL_ATTEMPTS) {
         logger.info(`Progress: ${commentsSent}/${count}. Scrolling for more posts...`);
-        await page.evaluate(() => window.scrollBy(0, 800));
-        await randomDelay(2000, 4000);
+        await humanScroll(page);
       }
     }
 

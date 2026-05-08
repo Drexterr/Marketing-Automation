@@ -186,3 +186,29 @@ export function loadFeedData(filePath) {
  * Generic append for feed system
  */
 export const appendAction = appendConnection;
+
+// ─── Human-like interaction helpers ──────────────────────────────────────────
+
+export async function humanType(element, text) {
+  for (const char of text) {
+    await element.type(char);
+    await new Promise(r => setTimeout(r, randomBetween(30, 130)));
+  }
+}
+
+export async function humanClick(element) {
+  await element.hover();
+  await new Promise(r => setTimeout(r, randomBetween(200, 500)));
+  await element.click();
+}
+
+export async function humanScroll(page) {
+  const amount = randomBetween(300, 900);
+  await page.evaluate((px) => window.scrollBy(0, px), amount);
+  await randomDelay(1000, 3000);
+}
+
+export function isWithinOperatingHours() {
+  const hour = new Date().getHours();
+  return hour >= 9 && hour < 20;
+}

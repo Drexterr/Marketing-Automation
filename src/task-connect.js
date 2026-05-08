@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections } from './utils/helpers.js';
+import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections, humanType, humanClick, isWithinOperatingHours } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import path from 'path';
 
@@ -76,6 +76,11 @@ function evaluationScoreHeuristic(headline) {
 }
 
 export async function runConnectionWorkflow(page) {
+  if (!isWithinOperatingHours()) {
+    logger.warn('Outside operating hours (9am–8pm). Skipping run.');
+    return;
+  }
+
   if (!(await isSessionValid(page))) {
     throw new Error('Session expired or restricted. Aborting run.');
   }
@@ -189,7 +194,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
     if (!connectButton) {
       const moreButton = await page.$('button[aria-label="More actions"]');
       if (moreButton) {
-        await moreButton.click();
+        await humanClick(moreButton);
         await randomDelay(1000, 2000);
         connectButton = await page.$('div[role="button"]:has-text("Connect")');
       }
@@ -199,7 +204,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
       logger.warn(`Connect button not found for ${profile.name}`);
       failureReason = 'connect_button_not_found';
     } else {
-      await connectButton.click();
+      await humanClick(connectButton);
       await randomDelay(2000, 4000);
 
       const addNoteButton = await page.$('button[aria-label="Add a note"]');
@@ -207,16 +212,17 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
         logger.warn(`"Add a note" button not found for ${profile.name}`);
         failureReason = 'note_dialog_missing';
         const cancelButton = await page.$('button[aria-label="Dismiss"]');
-        if (cancelButton) await cancelButton.click();
+        if (cancelButton) await humanClick(cancelButton);
       } else {
-        await addNoteButton.click();
+        await humanClick(addNoteButton);
         await randomDelay(2000, 3000);
 
         const editor = await page.$('textarea[name="message"]');
         if (editor) {
-          await editor.type(note, { delay: 50 });
+          await humanType(editor, note);
           await randomDelay(2000, 4000);
-          await page.click('button[aria-label="Send now"]');
+          const sendButton = await page.$('button[aria-label="Send now"]');
+          if (sendButton) await humanClick(sendButton);
           success = true;
           logger.info(`Successfully sent request to ${profile.name}`);
         } else {
