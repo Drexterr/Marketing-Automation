@@ -33,7 +33,7 @@ export function sanitizePromptInput(text) {
   let hasInjection = false;
   for (const pattern of injectionPatterns) {
     if (pattern.test(sanitized)) {
-      sanitized = sanitized.replace(pattern, (match) => `[REDACTED: ${match}]`);
+      sanitized = sanitized.replace(pattern, '[REDACTED]');
       hasInjection = true;
     }
   }
@@ -44,6 +44,11 @@ export function sanitizePromptInput(text) {
 
   // 4. Trim excessive whitespace
   sanitized = sanitized.replace(/\s+/g, ' ').trim();
+
+  // 5. Truncate to safe length
+  if (sanitized.length > 5000) {
+    sanitized = sanitized.slice(0, 5000);
+  }
 
   return sanitized;
 }
