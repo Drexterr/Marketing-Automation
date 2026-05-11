@@ -59,6 +59,15 @@ export async function runScheduler(tasks) {
       });
       logger.warn(`Recovered incomplete run ${run.id} and marked as failed.`);
     }
+
+    // Recover orphaned connections
+    const orphanedConnections = runsRepo.db.prepare(`SELECT id, profile_url, status FROM connections WHERE status IN ('pending', 'sending_connection')`).all();
+    if (orphanedConnections.length > 0) {
+      for (const conn of orphanedConnections) {
+        runsRepo.db.prepare(`UPDATE connections SET status = 'failed', last_action = 'crash_recovery', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(conn.id);
+        logger.warn(`Recovered orphaned connection ${conn.profile_url} and marked as failed.`);
+      }
+    }
   } catch (e) {
     logger.error('Failed to perform crash recovery', { error: e.message });
   }

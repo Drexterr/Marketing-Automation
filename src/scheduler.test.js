@@ -235,3 +235,54 @@ test('runScheduler reports Sleeping status when not time to run', async () => {
         RuntimeStateService.setFlag('system_state', null);
     }
 });
+
+import { SqliteRepository } from '../shared/repositories/SqliteRepository.js';
+
+test('runScheduler recovers orphaned connections on startup', async () => {
+    const connectionsRepo = new SqliteRepository('connections');
+    const uniqueSuffix = Date.now().toString() + Math.random().toString().slice(2, 6);
+    
+    // Create test records
+    const pendingConn = connectionsRepo.create({
+        profile_url: `https://linkedin.com/in/test-pending-${uniqueSuffix}`,
+        status: 'pending'
+    });
+    
+    const sendingConn = connectionsRepo.create({
+        profile_url: `https://linkedin.com/in/test-sending-${uniqueSuffix}`,
+        status: 'sending_connection'
+    });
+    
+    const validConn = connectionsRepo.create({
+        profile_url: `https://linkedin.com/in/test-sent-${uniqueSuffix}`,
+        status: 'sent'
+    });
+
+    // Make scheduler exit immediately
+    RuntimeStateService.setFlag('emergency_stop', true);
+    
+    const schedulerPromise = runScheduler([]);
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Scheduler hung')), 2000));
+    
+    try {
+        await Promise.race([schedulerPromise, timeoutPromise]);
+    } finally {
+        RuntimeStateService.setFlag('emergency_stop', false);
+    }
+    
+    // Verify records
+    const recoveredPending = connectionsRepo.findById(pendingConn.id);
+    const recoveredSending = connectionsRepo.findById(sendingConn.id);
+    const unchangedSent = connectionsRepo.findById(validConn.id);
+    
+    assert.strictEqual(recoveredPending.status, 'failed', 'pending connection should be failed');
+    assert.strictEqual(recoveredPending.last_action, 'crash_recovery', 'pending connection should have last_action = crash_recovery');
+    
+    assert.strictEqual(recoveredSending.status, 'failed', 'sending_connection should be failed');
+    assert.strictEqual(recoveredSending.last_action, 'crash_recovery', 'sending_connection should have last_action = crash_recovery');
+    
+    assert.strictEqual(unchangedSent.status, 'sent', 'sent connection should remain unchanged');
+
+    // Clean up test records
+    connectionsRepo.db.prepare(`DELETE FROM connections WHERE id IN (?, ?, ?)`).run(pendingConn.id, sendingConn.id, validConn.id);
+});
