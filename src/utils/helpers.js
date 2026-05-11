@@ -4,6 +4,9 @@ import path from 'node:path';
 
 import { sendAlert } from './alerts.js';
 import { RuntimeStateService } from '../../backend-api/services/RuntimeStateService.js';
+import { ConnectionRepository } from '../../shared/repositories/ConnectionRepository.js';
+
+const connectionRepo = new ConnectionRepository();
 
 export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
@@ -12,18 +15,12 @@ export const randomDelay = (min = 8000, max = 25000) => {
 };
 
 /**
- * Fix 1: Replace logAction() with NDJSON append
+ * Updated to use ConnectionRepository
  */
 export const appendConnection = async (filePath, entry) => {
-  const dir = path.dirname(filePath);
-  await fsPromises.mkdir(dir, { recursive: true });
-
-  const line = JSON.stringify({
-    ...entry,
-    timestamp: new Date().toISOString()
-  }) + '\n';
-
-  await fsPromises.appendFile(filePath, line);
+  // We ignore filePath as we use SQLite now, but keep signature for compatibility
+  const { url, status, lastAction, ...data } = entry;
+  connectionRepo.upsert(url, status || 'sent', lastAction || 'connect', data);
 };
 
 export async function getSystemState() {
@@ -61,16 +58,11 @@ export async function getDynamicWeeklyLimit() {
   return limits[Math.min(state.currentWeek - 1, limits.length - 1)];
 }
 
+/**
+ * Updated to use ConnectionRepository
+ */
 export async function checkDailyLimit(filePath, maxDaily = 10) {
-  const entries = loadConnections(filePath);
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const todayCount = entries.filter(e => 
-    (e.status === 'sent' || e.status === 'accepted') && 
-    new Date(e.timestamp).getTime() > startOfDay.getTime()
-  ).length;
-
+  const todayCount = connectionRepo.countSentToday();
   return todayCount < maxDaily;
 }
 
@@ -127,31 +119,56 @@ export async function logSessionSummary(summary) {
   await fsPromises.appendFile(logFile, line);
 }
 
+/**
+ * Updated to use ConnectionRepository
+ */
 export async function updateConnectionRecord(filePath, url, updates) {
-  const entries = loadConnections(filePath);
-  const updatedEntries = entries.map(e => {
-    if (e.url === url) {
-      return { ...e, ...updates };
-    }
-    return e;
-  });
-  
-  const content = updatedEntries.map(e => JSON.stringify(e)).join('\n') + '\n';
-  const tempPath = `${filePath}.tmp`;
-  
-  try {
-    await fsPromises.writeFile(tempPath, content);
-    await fsPromises.rename(tempPath, filePath);
-  } catch (error) {
-    try { await fsPromises.unlink(tempPath); } catch {}
-    throw error;
+  const existing = connectionRepo.findByProfileUrl(url);
+  if (existing) {
+    const status = updates.status || existing.status;
+    const lastAction = updates.lastAction || existing.last_action;
+    const currentData = JSON.parse(existing.data || '{}');
+    const newData = { ...currentData, ...updates };
+    // Remove fields that are now top-level
+    delete newData.status;
+    delete newData.lastAction;
+    delete newData.url;
+
+    connectionRepo.upsert(url, status, lastAction, newData);
   }
 }
 
 /**
- * Fix 1: Update loader for connections
+ * Updated to use ConnectionRepository
  */
 export function loadConnections(filePath) {
+  // If it's a feed file, we might still want to use the file-based loader
+  if (filePath && (filePath.includes('feed') || filePath.includes('actions'))) {
+    try {
+      return fs.readFileSync(filePath, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  }
+  
+  return connectionRepo.findAllConnections();
+}
+
+/**
+ * Updated to use ConnectionRepository
+ */
+export function checkWeeklyLimit(filePath, limit) {
+  const count = connectionRepo.countSentInLast7Days();
+  return count < limit;
+}
+
+/**
+ * Generic loader for feed data
+ */
+export function loadFeedData(filePath) {
   try {
     return fs.readFileSync(filePath, 'utf8')
       .split('\n')
@@ -163,30 +180,23 @@ export function loadConnections(filePath) {
 }
 
 /**
- * Fix 1: Update weekly limit check to use loadConnections
- */
-export function checkWeeklyLimit(filePath, limit) {
-  const entries = loadConnections(filePath);
-  const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-
-  // Filter only 'sent' status to match weekly limit requirements if specified, 
-  // but prompt just says filter entries by timestamp.
-  return entries.filter(e =>
-    e.status === 'sent' && new Date(e.timestamp).getTime() > oneWeekAgo
-  ).length < limit;
-}
-
-/**
- * Re-using loadConnections logic for feed data to keep it consistent
- */
-export function loadFeedData(filePath) {
-  return loadConnections(filePath);
-}
-
-/**
  * Generic append for feed system
  */
-export const appendAction = appendConnection;
+export const appendAction = async (filePath, entry) => {
+  if (filePath.includes('connections-sent')) {
+    return appendConnection(filePath, entry);
+  }
+
+  const dir = path.dirname(filePath);
+  await fsPromises.mkdir(dir, { recursive: true });
+
+  const line = JSON.stringify({
+    ...entry,
+    timestamp: new Date().toISOString()
+  }) + '\n';
+
+  await fsPromises.appendFile(filePath, line);
+};
 
 // ─── Human-like interaction helpers ──────────────────────────────────────────
 

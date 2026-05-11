@@ -1,8 +1,5 @@
 import logger from './utils/logger.js';
 import { isSessionValid, loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay } from './utils/helpers.js';
-import path from 'path';
-
-const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
 
 const INTENT_KEYWORDS = ['pricing', 'demo', 'interested', 'tell me more', "let's talk", 'book', 'calendar', 'schedule'];
 
@@ -55,7 +52,7 @@ export async function runReplyCheck(page) {
         }
       }
 
-      await updateConnectionRecord(CONNECTIONS_SENT_FILE, cleanUrl, {
+      await updateConnectionRecord(undefined, cleanUrl, {
         stage: 'replied',
         repliedAt: new Date().toISOString(),
         lastMessagePreview: lastMessageText.substring(0, 100).replace(/\n/g, ' '),

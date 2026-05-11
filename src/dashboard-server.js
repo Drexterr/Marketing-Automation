@@ -8,7 +8,7 @@ const port = process.env.DASHBOARD_PORT || 3000;
 
 app.get('/api/stats', (req, res) => {
   try {
-    const connections = loadConnections(path.join(process.cwd(), 'data', 'connections-sent.json'));
+    const connections = loadConnections('connections');
     
     const stats = {
       totalSent: connections.filter(c => c.status === 'sent').length,

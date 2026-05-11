@@ -2,9 +2,6 @@ import logger from './utils/logger.js';
 import { randomDelay, randomBetween, loadConnections, updateConnectionRecord, isSessionValid, logSessionSummary } from './utils/helpers.js';
 import { generateFirstMessage } from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
-import path from 'path';
-
-const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
 
 export async function checkAcceptedConnections(page) {
   logger.info('Checking for newly accepted connections with pagination...');
@@ -45,7 +42,7 @@ export async function checkAcceptedConnections(page) {
     }
 
     const recentConnections = Array.from(processedUrls);
-    const entries = loadConnections(CONNECTIONS_SENT_FILE);
+    const entries = loadConnections();
     let acceptedCount = 0;
 
     for (const entry of entries) {
@@ -57,7 +54,7 @@ export async function checkAcceptedConnections(page) {
       if (entry.status === 'sent' || entry.status === 'request_sent') { // Check both to be safe
         const isAccepted = recentConnections.some(url => url.includes(entry.url) || entry.url.includes(url));
         if (isAccepted) {
-          await updateConnectionRecord(CONNECTIONS_SENT_FILE, entry.url, {
+          await updateConnectionRecord(undefined, entry.url, {
             status: 'accepted',
             stage: 'connected',
             acceptedAt: new Date().toISOString()
@@ -81,7 +78,7 @@ export async function runFirstMessageWorkflow(page) {
 
   const acceptedFound = await checkAcceptedConnections(page);
 
-  const entries = loadConnections(CONNECTIONS_SENT_FILE);
+  const entries = loadConnections();
   const targets = entries.filter(e => {
     if (e.status !== 'accepted') return false;
     if (e.stage === 'first_message_sent') return false;
@@ -116,7 +113,7 @@ export async function runFirstMessageWorkflow(page) {
       const message = await generateFirstMessage(target);
       
       // CRITICAL FIX 3: Intermediate state for duplicate prevention
-      await updateConnectionRecord(CONNECTIONS_SENT_FILE, target.url, {
+      await updateConnectionRecord(undefined, target.url, {
         stage: 'sending_first_message',
         messageDraftedAt: new Date().toISOString()
       });
@@ -148,7 +145,7 @@ export async function runFirstMessageWorkflow(page) {
           await sendBtn.click();
           await randomDelay(2000, 4000);
 
-          await updateConnectionRecord(CONNECTIONS_SENT_FILE, target.url, {
+          await updateConnectionRecord(undefined, target.url, {
             stage: 'first_message_sent',
             firstMessageSentAt: new Date().toISOString(),
             followUpSent: false

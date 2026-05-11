@@ -2,12 +2,9 @@ import logger from './utils/logger.js';
 import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay } from './utils/helpers.js';
 import { sendAlert } from './utils/alerts.js';
 import { generateReplyResponse } from './claude-service.js';
-import path from 'path';
-
-const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
 
 export async function runReplyResponse(page) {
-  const connections = loadConnections(CONNECTIONS_SENT_FILE);
+  const connections = loadConnections(undefined);
   // Only respond to those who replied and we haven't sent an AI response yet
   const toRespond = connections.filter(c => c.stage === 'replied' && !c.aiResponseSent);
   
@@ -43,7 +40,7 @@ export async function runReplyResponse(page) {
 
       if (aiResponse.includes('ESC_HUMAN')) {
         logger.info(`Escalating ${profile.name} to human review.`);
-        await updateConnectionRecord(CONNECTIONS_SENT_FILE, profile.url, {
+        await updateConnectionRecord(undefined, profile.url, {
           stage: 'interested',
           aiResponseSent: true,
           escalatedAt: new Date().toISOString()
@@ -65,7 +62,7 @@ export async function runReplyResponse(page) {
           if (sendButton && !(await sendButton.isDisabled())) {
             await sendButton.click();
             
-            await updateConnectionRecord(CONNECTIONS_SENT_FILE, profile.url, {
+            await updateConnectionRecord(undefined, profile.url, {
               stage: 'conversation_active',
               aiResponseSent: true,
               lastAiResponse: aiResponse,

@@ -4,8 +4,6 @@ import * as claudeService from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
 
-const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
-
 export async function searchAndExtractProfiles(page, keyword) {
   logger.info(`Searching for: ${keyword}`);
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}&origin=CLUSTER_EXPANSION`;
@@ -102,12 +100,12 @@ export async function runConnectionWorkflow(page) {
       return;
     }
 
-    if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
+    if (!checkWeeklyLimit('connections', weeklyLimit)) {
       logger.warn('Dynamic weekly connection limit reached. Stopping.');
       break;
     }
 
-    if (!(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
+    if (!(await checkDailyLimit('connections', dailyCap))) {
       logger.info('Daily connection cap reached — stopping session');
       dailyLimitHit = true;
       break;
@@ -121,12 +119,12 @@ export async function runConnectionWorkflow(page) {
         return;
       }
 
-      if (!checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) {
+      if (!checkWeeklyLimit('connections', weeklyLimit)) {
         logger.warn('Weekly limit reached during processing. Stopping.');
         break;
       }
       
-      if (!(await checkDailyLimit(CONNECTIONS_SENT_FILE, dailyCap))) {
+      if (!(await checkDailyLimit('connections', dailyCap))) {
         logger.info('Daily cap reached during processing. Stopping.');
         dailyLimitHit = true;
         break;
@@ -171,16 +169,16 @@ export async function runConnectionWorkflow(page) {
       }
     }
     
-    if (dailyLimitHit || !checkWeeklyLimit(CONNECTIONS_SENT_FILE, weeklyLimit)) break;
+    if (dailyLimitHit || !checkWeeklyLimit('connections', weeklyLimit)) break;
 
     logger.info(`Finished keyword "${keyword}". Waiting before next search...`);
     await randomDelay(10000, 20000);
   }
 
   // Summary logic
-  const entries = loadConnections(CONNECTIONS_SENT_FILE);
+  const connections = loadConnections('connections');
   const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-  const sentInLastWeek = entries.filter(e => e.status === 'sent' && new Date(e.timestamp).getTime() > oneWeekAgo).length;
+  const sentInLastWeek = connections.filter(e => e.status === 'sent' && new Date(e.updated_at).getTime() > oneWeekAgo).length;
 
   await logSessionSummary({
     runType: "connections",
@@ -253,7 +251,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
   /**
    * Fix 4: Log ALL outcomes (success or failure)
    */
-  await appendConnection(CONNECTIONS_SENT_FILE, {
+  await appendConnection('connections', {
     name: profile.name,
     headline: profile.headline,
     company: profile.company,

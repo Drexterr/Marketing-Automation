@@ -45,7 +45,7 @@ Source files are transitioning to the `src/` directory for a more modular struct
 | `task-feed.js` | (Legacy) Scroll feed → score posts → comment |
 
 ### Data flow
-New components use the `BrowserManager` instance for stateful browser control. State is persisted in `data/*.json` files. Session cookies are saved to `data/session.json`.
+State is persisted in SQLite (`database/cue-os.sqlite`) and supplemental `data/*.ndjson` logs. Session cookies are saved to `data/session.json`.
 
 ### Claude model in use
 
@@ -74,7 +74,8 @@ Selectors are embedded inline in each task file (not abstracted). They break whe
 
 ## Safety Constraints
 
-- Hard weekly cap of 100 connections (tracked in `data/connections-sent.json`, resets every 7 days)
+- Hard weekly cap of 100 connections (tracked in SQLite, resets every 7 days)
+- Global Emergency Stop: Trigger via `RuntimeStateService` or Dashboard.
 - Random delays: 5–12s between connections, 15–30s between comments
 - Max 10 comments per feed session
 - Character-by-character typing simulation for human-like input

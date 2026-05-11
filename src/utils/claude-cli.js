@@ -17,10 +17,14 @@ export async function callCLI(prompt, retries = 2) {
 
 function _spawn(prompt) {
   return new Promise((resolve, reject) => {
-    // shell:true ensures PATH resolution on Windows
-    const proc = spawn('claude', ['--output-format', 'text', '-p', prompt], {
+    // shell:false is used for security to harden against command injection.
+    // On Windows, 'claude' resolves to 'claude.exe' in the user's local bin, 
+    // so it works without shell:true.
+    const command = 'claude';
+    
+    const proc = spawn(command, ['--output-format', 'text', '-p', prompt], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
+      shell: false,
       timeout: 90000
     });
 

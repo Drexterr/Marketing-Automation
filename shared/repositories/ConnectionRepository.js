@@ -9,12 +9,49 @@ export class ConnectionRepository extends SqliteRepository {
         return this.db.prepare(`SELECT * FROM connections WHERE profile_url = ?`).get(profileUrl);
     }
 
-    upsert(data) {
-        const existing = this.findByProfileUrl(data.profile_url);
+    upsert(profileUrl, status, lastAction, data) {
+        const existing = this.findByProfileUrl(profileUrl);
+        const record = {
+            profile_url: profileUrl,
+            status,
+            last_action: lastAction,
+            data: JSON.stringify(data)
+        };
+
         if (existing) {
-            return this.update(existing.id, data);
+            return this.update(existing.id, record);
         } else {
-            return this.create(data);
+            return this.create(record);
         }
+    }
+
+    countSentInLast7Days() {
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        return this.db.prepare(`
+            SELECT COUNT(*) as count FROM connections 
+            WHERE status = 'sent' AND updated_at > ?
+        `).get(oneWeekAgo).count;
+    }
+
+    countSentToday() {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const startOfDayIso = startOfDay.toISOString();
+        return this.db.prepare(`
+            SELECT COUNT(*) as count FROM connections 
+            WHERE (status = 'sent' OR status = 'accepted') AND updated_at > ?
+        `).get(startOfDayIso).count;
+    }
+
+    findAllConnections() {
+        const records = this.findAll();
+        return records.map(r => ({
+            ...JSON.parse(r.data || '{}'),
+            id: r.id,
+            profile_url: r.profile_url,
+            status: r.status,
+            last_action: r.last_action,
+            updated_at: r.updated_at
+        }));
     }
 }

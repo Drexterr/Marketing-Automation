@@ -4,8 +4,7 @@ import logger from './utils/logger.js';
 import { loadConnections } from './utils/helpers.js';
 
 export async function generateDashboardSummary() {
-  const filePath = path.join(process.cwd(), 'data', 'connections-sent.json');
-  const records = loadConnections(filePath);
+  const records = loadConnections('connections');
   
   const metrics = {
     connectionsSent: 0,

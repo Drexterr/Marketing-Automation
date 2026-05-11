@@ -1,12 +1,9 @@
 import logger from './utils/logger.js';
 import { loadConnections, updateConnectionRecord } from './utils/helpers.js';
-import path from 'path';
-
-const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
 
 export async function runFollowUpMarking() {
   logger.info('Running follow-up scheduler...');
-  const records = loadConnections(CONNECTIONS_SENT_FILE);
+  const records = loadConnections();
   const now = new Date().getTime();
   let updatedCount = 0;
 
@@ -18,7 +15,7 @@ export async function runFollowUpMarking() {
       
       // Default timing: 5 days for first follow-up eligibility
       if (daysSinceSent >= 5) {
-        await updateConnectionRecord(CONNECTIONS_SENT_FILE, record.url, {
+        await updateConnectionRecord(undefined, record.url, {
           stage: 'followup_eligible',
           followUpEligibleAt: new Date().toISOString(),
           followUpCount: 0
