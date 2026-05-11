@@ -15,6 +15,24 @@ import { generateDashboardSummary } from './analytics.js';
 import { runScheduler } from './scheduler.js';
 import { startDashboard } from './dashboard-server.js';
 import logger from './utils/logger.js';
+import { getDashboardHash } from '../backend-api/middleware/auth.js';
+
+function validateSystem() {
+  try {
+    if (!process.env.DASHBOARD_PASSWORD) {
+      throw new Error('DASHBOARD_PASSWORD not set in .env');
+    }
+    // Pre-hash password and validate it can be hashed
+    getDashboardHash();
+    logger.info('System validation passed');
+  } catch (error) {
+    logger.error('CRITICAL: System validation failed', { error: error.message });
+    process.exit(1);
+  }
+}
+
+// Validate environment
+validateSystem();
 
 async function setup() {
   const browserManager = new BrowserManager();

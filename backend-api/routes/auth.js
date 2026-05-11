@@ -1,38 +1,43 @@
 import express from 'express';
 import crypto from 'crypto';
 import { JsonRepository } from '../../shared/repositories/JsonRepository.js';
-import { hashPassword, verifyPassword, activeTokens } from '../middleware/auth.js';
+import { hashPassword, verifyPassword, activeTokens, getDashboardHash } from '../middleware/auth.js';
 import { logAudit } from '../services/auditService.js';
 import { authRateLimiter } from '../middleware/security.js';
 import path from 'path';
+import logger from '../../src/utils/logger.js';
 
 const router = express.Router();
-const authRepo = new JsonRepository(path.join('data', 'auth.json'));
-
-router.post('/setup', authRateLimiter, async (req, res) => {
-  const { password } = req.body;
-  const config = await authRepo.findAll();
-  if (config.passwordHash) {
-    return res.status(400).json({ error: 'Already setup' });
-  }
-  await authRepo.update({ passwordHash: hashPassword(password) });
-  await logAudit('system_setup', { action: 'admin_created' });
-  res.json({ success: true });
-});
 
 router.post('/login', authRateLimiter, async (req, res) => {
   const { password } = req.body;
-  const config = await authRepo.findAll();
   
-  if (!config.passwordHash || !verifyPassword(password, config.passwordHash)) {
-    await logAudit('auth_failure', { reason: 'invalid_password' });
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+  try {
+    const dashboardHash = getDashboardHash();
 
-  const token = crypto.randomBytes(32).toString('hex');
-  activeTokens.add(token);
-  await logAudit('auth_success', { action: 'login' });
-  res.json({ token });
+    if (!verifyPassword(password, dashboardHash)) {
+      await logAudit('auth_failure', { reason: 'invalid_password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    activeTokens.set(token, expiry);
+
+    await logAudit('auth_success', { action: 'login' });
+
+    res.cookie('session_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Login error', { error: error.message });
+    res.status(500).json({ error: 'Server configuration error' });
+  }
 });
 
 export default router;
