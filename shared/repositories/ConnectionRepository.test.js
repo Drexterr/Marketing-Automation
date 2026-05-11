@@ -45,6 +45,22 @@ test('ConnectionRepository operations', async (t) => {
         assert.equal(count, 2); // sent or accepted
     });
 
+    await t.test('should count sent today including those created earlier but updated today', () => {
+        repo.clear();
+        
+        // Manually insert a record created yesterday but updated today
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const now = new Date().toISOString();
+        
+        repo.db.prepare(`
+            INSERT INTO connections (profile_url, status, last_action, data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `).run('old-url', 'sent', 'connect', '{}', yesterday, now);
+        
+        const count = repo.countSentToday();
+        assert.equal(count, 1, 'Should count connection updated today even if created yesterday');
+    });
+
     await t.test('should count sent in last 7 days', () => {
         repo.clear();
         repo.upsert('url1', 'sent', 'connect', {});

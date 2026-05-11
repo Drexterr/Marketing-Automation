@@ -30,7 +30,7 @@ export class ConnectionRepository extends SqliteRepository {
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE status = 'sent' AND datetime(created_at) > datetime(?)
+            WHERE status = 'sent' AND updated_at > ?
         `).get(oneWeekAgo).count;
     }
 
@@ -40,7 +40,7 @@ export class ConnectionRepository extends SqliteRepository {
         const startOfDayIso = startOfDay.toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE (status = 'sent' OR status = 'accepted') AND datetime(created_at) > datetime(?)
+            WHERE (status = 'sent' OR status = 'accepted') AND updated_at > ?
         `).get(startOfDayIso).count;
     }
 
