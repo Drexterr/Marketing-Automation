@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS runtime_state (
     key TEXT PRIMARY KEY,
     value TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -10,8 +11,12 @@ CREATE TABLE IF NOT EXISTS connections (
     status TEXT,
     last_action TEXT,
     data TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_connections_status ON connections(status);
+CREATE INDEX IF NOT EXISTS idx_connections_created_at ON connections(created_at);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +24,8 @@ CREATE TABLE IF NOT EXISTS messages (
     thread_id TEXT,
     content TEXT,
     direction TEXT, -- 'sent', 'received'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS review_queue (
@@ -37,7 +43,8 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
     key TEXT, -- e.g., 'connect-message'
     version INTEGER,
     content TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS activity_log (
@@ -45,14 +52,22 @@ CREATE TABLE IF NOT EXISTS activity_log (
     event_type TEXT,
     module TEXT,
     details TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS scheduler_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     start_time TIMESTAMP,
     end_time TIMESTAMP,
-    status TEXT -- 'running', 'completed', 'failed'
+    status TEXT, -- 'running', 'completed', 'failed'
+    failure_reason TEXT,
+    duration INTEGER,
+    records_processed INTEGER DEFAULT 0,
+    graceful_shutdown INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Seed initial runtime state

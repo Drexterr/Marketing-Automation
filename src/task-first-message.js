@@ -171,4 +171,5 @@ export async function runFirstMessageWorkflow(page) {
   });
 
   logger.info(`Session Summary: Sent ${messagesSent} first messages.`);
+  return { recordsProcessed: messagesSent };
 }

@@ -17,6 +17,40 @@ import { startDashboard } from './dashboard-server.js';
 import logger from './utils/logger.js';
 import { getDashboardHash } from '../backend-api/middleware/auth.js';
 import db from '../backend-api/db/init.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
+import { activeBrowsers } from './browser.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+async function shutdown() {
+  logger.info('Initiating graceful shutdown...');
+  RuntimeStateService.setFlag('emergency_stop', true);
+  
+  for (const manager of activeBrowsers) {
+    try {
+      logger.info('Closing active browser instance...');
+      await manager.close();
+    } catch (e) {
+      logger.error('Error closing browser during shutdown', { error: e.message });
+    }
+  }
+
+  const lockFile = path.join(process.cwd(), 'data', 'scheduler.lock');
+  if (fs.existsSync(lockFile)) {
+    try {
+      fs.unlinkSync(lockFile);
+      logger.info('Scheduler lock file removed.');
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  logger.info('Shutdown complete.');
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 function validateSystem() {
   try {
@@ -87,10 +121,12 @@ async function connect() {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
-    await runConnectionWorkflow(page);
+    const result = await runConnectionWorkflow(page);
     await generateDashboardSummary();
+    return result;
   } catch (error) {
     logger.error('Connection task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   } finally {
     await browserManager.close();
   }
@@ -98,9 +134,11 @@ async function connect() {
 
 async function feed() {
   try {
-    await runFeedCommenting(3);
+    const result = await runFeedCommenting(3);
+    return result;
   } catch (error) {
     logger.error('Feed task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   }
 }
 
@@ -108,10 +146,12 @@ async function firstMessage() {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
-    await runFirstMessageWorkflow(page);
+    const result = await runFirstMessageWorkflow(page);
     await generateDashboardSummary();
+    return result;
   } catch (error) {
     logger.error('First message task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   } finally {
     await browserManager.close();
   }
@@ -121,11 +161,16 @@ async function replies() {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
-    await runReplyCheck(page);
-    await runReplyResponse(page);
+    const checkResult = await runReplyCheck(page);
+    const respondResult = await runReplyResponse(page);
     await generateDashboardSummary();
+    
+    return { 
+      recordsProcessed: (checkResult?.recordsProcessed || 0) + (respondResult?.recordsProcessed || 0) 
+    };
   } catch (error) {
     logger.error('Reply workflow failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   } finally {
     await browserManager.close();
   }
@@ -133,18 +178,22 @@ async function replies() {
 
 async function followups() {
   try {
-    await runFollowUpMarking();
+    const result = await runFollowUpMarking();
     await generateDashboardSummary();
+    return result;
   } catch (error) {
     logger.error('Followups task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   }
 }
 
 async function analytics() {
   try {
     await generateDashboardSummary();
+    return { recordsProcessed: 0 };
   } catch (error) {
     logger.error('Analytics task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   }
 }
 
@@ -152,9 +201,11 @@ async function post() {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
-    await runPostContent(page);
+    const result = await runPostContent(page);
+    return result;
   } catch (error) {
     logger.error('Post task failed', { message: error.message, stack: error.stack });
+    return { recordsProcessed: 0 };
   } finally {
     await browserManager.close();
   }

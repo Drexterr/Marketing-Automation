@@ -6,7 +6,7 @@ export async function runPostContent(page) {
   const state = await getSystemState();
   if (process.env.ENABLE_AUTO_POST !== 'true') {
     logger.info('Auto-post is disabled (ENABLE_AUTO_POST != true). Skipping.');
-    return;
+    return { recordsProcessed: 0 };
   }
 
   // Only post 2x per week (Tue and Thu)
@@ -14,14 +14,14 @@ export async function runPostContent(page) {
   const day = now.getDay(); // 0 = Sunday, 2 = Tuesday, 4 = Thursday
   if (day !== 2 && day !== 4) {
     logger.info('Not a scheduled posting day (Tuesday or Thursday). skipping.');
-    return;
+    return { recordsProcessed: 0 };
   }
 
   // Check if we already posted today
   const lastPostDate = state.lastPostDate ? new Date(state.lastPostDate) : null;
   if (lastPostDate && lastPostDate.toDateString() === now.toDateString()) {
     logger.info('Already posted content today. Skipping.');
-    return;
+    return { recordsProcessed: 0 };
   }
 
   if (!(await isSessionValid(page))) {
@@ -33,6 +33,7 @@ export async function runPostContent(page) {
   const postContent = await generateLinkedInPost(topic);
 
   logger.info(`Drafted post: "${postContent.substring(0, 100)}..."`);
+  let posted = false;
 
   try {
     await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'networkidle' });
@@ -55,10 +56,12 @@ export async function runPostContent(page) {
           
           await updateSystemState({ lastPostDate: now.toISOString() });
           logger.info('Successfully posted LinkedIn content.');
+          posted = true;
         }
       }
     }
   } catch (error) {
     logger.error('Failed to post LinkedIn content', { error: error.message });
   }
+  return { recordsProcessed: posted ? 1 : 0 };
 }

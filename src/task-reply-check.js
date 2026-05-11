@@ -18,8 +18,13 @@ export async function runReplyCheck(page) {
     const unreadThreads = await page.$$('.msg-conversation-listitem--unread');
     
     logger.info(`Found ${unreadThreads.length} unread threads.`);
+    let threadsProcessed = 0;
 
     for (const thread of unreadThreads) {
+      if (RuntimeStateService.shouldStop('reply_check')) {
+        logger.info('Reply check interrupted by system signal');
+        break;
+      }
       await thread.click();
       await randomDelay(2000, 4000);
 
@@ -68,9 +73,11 @@ export async function runReplyCheck(page) {
         });
         logger.info(`High intent detected for ${cleanUrl}`);
       }
+      threadsProcessed++;
     }
     
     logger.info('Reply check complete.');
+    return { recordsProcessed: threadsProcessed };
   } catch (error) {
     logger.error('Error during reply check', { error: error.message });
     throw error;
