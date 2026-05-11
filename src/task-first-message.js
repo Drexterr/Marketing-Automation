@@ -1,6 +1,7 @@
 import logger from './utils/logger.js';
 import { randomDelay, randomBetween, loadConnections, updateConnectionRecord, isSessionValid, logSessionSummary } from './utils/helpers.js';
 import { generateFirstMessage } from './claude-service.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
 
 const CONNECTIONS_SENT_FILE = path.join(process.cwd(), 'data', 'connections-sent.json');
@@ -18,6 +19,10 @@ export async function checkAcceptedConnections(page) {
     let pageCount = 0;
 
     while (stagnantScrolls < MAX_STAGNANT_SCROLLS && pageCount < MAX_PAGES) {
+      if (RuntimeStateService.shouldStop('first_message')) {
+        logger.info('First message task (check) interrupted by system signal');
+        return 0;
+      }
       const previousSize = processedUrls.size;
       
       const newUrls = await page.evaluate(() => {
@@ -44,6 +49,11 @@ export async function checkAcceptedConnections(page) {
     let acceptedCount = 0;
 
     for (const entry of entries) {
+      if (RuntimeStateService.shouldStop('first_message')) {
+        logger.info('First message task (check-loop) interrupted by system signal');
+        return acceptedCount;
+      }
+
       if (entry.status === 'sent' || entry.status === 'request_sent') { // Check both to be safe
         const isAccepted = recentConnections.some(url => url.includes(entry.url) || entry.url.includes(url));
         if (isAccepted) {
@@ -98,6 +108,10 @@ export async function runFirstMessageWorkflow(page) {
 
   let messagesSent = 0;
   for (const target of targets) {
+    if (RuntimeStateService.shouldStop('first_message')) {
+      logger.info('First message task interrupted by system signal');
+      break;
+    }
     try {
       const message = await generateFirstMessage(target);
       

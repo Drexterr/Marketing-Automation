@@ -3,12 +3,13 @@ import crypto from 'crypto';
 import { JsonRepository } from '../../shared/repositories/JsonRepository.js';
 import { hashPassword, verifyPassword, activeTokens } from '../middleware/auth.js';
 import { logAudit } from '../services/auditService.js';
+import { authRateLimiter } from '../middleware/security.js';
 import path from 'path';
 
 const router = express.Router();
 const authRepo = new JsonRepository(path.join('data', 'auth.json'));
 
-router.post('/setup', async (req, res) => {
+router.post('/setup', authRateLimiter, async (req, res) => {
   const { password } = req.body;
   const config = await authRepo.findAll();
   if (config.passwordHash) {
@@ -19,7 +20,7 @@ router.post('/setup', async (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authRateLimiter, async (req, res) => {
   const { password } = req.body;
   const config = await authRepo.findAll();
   

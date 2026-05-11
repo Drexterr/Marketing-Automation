@@ -1,14 +1,12 @@
 import express from 'express';
-import { stateManager } from '../../shared/state/StateManager.js';
-import { JsonRepository } from '../../shared/repositories/JsonRepository.js';
-import { logAudit } from '../services/auditService.js';
-import path from 'path';
+import { RuntimeStateService } from '../services/RuntimeStateService.js';
+import { ActivityRepository } from '../../shared/repositories/ActivityRepository.js';
 
 const router = express.Router();
-const configRepo = new JsonRepository(path.join('data', 'system-config.json'));
+const activityRepo = new ActivityRepository();
 
 router.get('/', (req, res) => {
-  res.json(stateManager.state);
+  res.json(RuntimeStateService.getAllFlags());
 });
 
 router.post('/toggle/:module', async (req, res) => {
@@ -16,18 +14,17 @@ router.post('/toggle/:module', async (req, res) => {
   const { enabled } = req.body;
   
   const key = `${module}_enabled`;
-  stateManager.setState(key, enabled);
-  await configRepo.update({ [key]: enabled });
+  RuntimeStateService.setFlag(key, enabled);
   
-  await logAudit('toggle_module', { module, enabled });
+  activityRepo.log('toggle_module', 'api', { module, enabled });
   res.json({ success: true });
 });
 
 router.post('/stop', async (req, res) => {
-  stateManager.setState('scheduler', 'stopped');
-  await configRepo.update({ scheduler_enabled: false });
+  RuntimeStateService.setFlag('scheduler_enabled', false);
+  RuntimeStateService.emergencyStop();
   
-  await logAudit('emergency_stop', { source: 'api' });
+  activityRepo.log('emergency_stop', 'api', { source: 'api' });
   res.json({ success: true });
 });
 
