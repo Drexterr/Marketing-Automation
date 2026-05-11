@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getAnalytics } from '@/lib/api';
-import { StatCard } from '@/components/dashboard/stat-card';
-import { AnalyticsCharts } from '@/components/dashboard/analytics-charts';
+import { StatCard } from '@/components/dashboard/StatCard';
+import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { ControlPanel } from '@/components/dashboard/ControlPanel';
 import { ReviewQueue } from '@/components/dashboard/ReviewQueue';
