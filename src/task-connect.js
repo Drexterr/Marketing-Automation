@@ -1,5 +1,5 @@
 import logger from './utils/logger.js';
-import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections, humanType, humanClick, isWithinOperatingHours } from './utils/helpers.js';
+import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections, humanType, humanClick, isWithinOperatingHours, EmergencyStopError } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
@@ -64,6 +64,9 @@ async function scrapeProfileDetails(page, profile) {
     profile.isOpenToWork = details.isOpenToWork;
     logger.info(`Scraped details for ${profile.name}: OpenToWork=${profile.isOpenToWork}`);
   } catch (error) {
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+      throw error;
+    }
     logger.warn(`Failed to deep scrape ${profile.name}`, { message: error.message });
   }
 }
@@ -119,6 +122,11 @@ export async function runConnectionWorkflow(page) {
         return;
       }
 
+      // Mid-loop safety check
+      if (!(await isSessionValid(page))) {
+        throw new Error('Session restricted or expired mid-loop during search processing');
+      }
+
       if (!checkWeeklyLimit('connections', weeklyLimit)) {
         logger.warn('Weekly limit reached during processing. Stopping.');
         break;
@@ -152,6 +160,15 @@ export async function runConnectionWorkflow(page) {
             profile.company
           );
           
+          // Crash protection: Pre-mark as sending
+          await appendConnection('connections', {
+            url: profile.url,
+            name: profile.name,
+            status: 'pending',
+            stage: 'sending_connection',
+            messageDraftedAt: new Date().toISOString()
+          });
+
           const sent = await sendConnectionRequest(page, profile, evaluation.score, note, keyword);
           if (sent) {
             connectionsSent++;
@@ -164,6 +181,10 @@ export async function runConnectionWorkflow(page) {
           await randomDelay(3000, 7000);
         }
       } catch (error) {
+        if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+          logger.info('Connect task aborted gracefully due to emergency stop.');
+          break; // Stop processing further profiles
+        }
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
         failed++;
       }
@@ -244,6 +265,9 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
       }
     }
   } catch (error) {
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+      throw error;
+    }
     logger.error(`Failed to send connection request to ${profile.name}`, { error: error.message });
     failureReason = `error: ${error.message}`;
   }

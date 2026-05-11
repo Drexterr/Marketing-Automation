@@ -1,6 +1,6 @@
 import { BrowserManager } from './browser.js';
 import * as claudeService from './claude-service.js';
-import { randomDelay, appendAction, loadFeedData, humanType, humanClick, humanScroll, isWithinOperatingHours } from './utils/helpers.js';
+import { randomDelay, appendAction, loadFeedData, humanType, humanClick, humanScroll, isWithinOperatingHours, isSessionValid, EmergencyStopError } from './utils/helpers.js';
 import logger from './utils/logger.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import path from 'path';
@@ -49,6 +49,11 @@ export async function runFeedCommenting(count = 3) {
         if (RuntimeStateService.shouldStop('feed')) {
           logger.info('Feed task interrupted by system signal');
           return;
+        }
+
+        // Mid-loop safety check
+        if (!(await isSessionValid(page))) {
+          throw new Error('Session restricted or expired mid-loop during feed processing');
         }
 
         if (commentsSent >= count) break;
@@ -117,6 +122,10 @@ export async function runFeedCommenting(count = 3) {
             await randomDelay(60000, 120000);
           }
         } catch (err) {
+          if (err instanceof EmergencyStopError || err.message.includes('EmergencyStopError')) {
+            logger.info('Feed task aborted gracefully due to emergency stop.');
+            return;
+          }
           logger.error(`Failed to comment on post ${urn}`, { message: err.message });
         }
       }
@@ -135,7 +144,11 @@ export async function runFeedCommenting(count = 3) {
     }
 
   } catch (error) {
-    logger.error('Feed commenting workflow failed', { message: error.message });
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+      logger.info('Feed commenting workflow aborted gracefully due to emergency stop.');
+    } else {
+      logger.error('Feed commenting workflow failed', { message: error.message });
+    }
   } finally {
     await browserManager.close();
   }

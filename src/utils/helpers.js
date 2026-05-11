@@ -2,17 +2,17 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
-import { sendAlert } from './alerts.js';
+import { sendAlert, sendCritical } from './alerts.js';
 import { RuntimeStateService } from '../../backend-api/services/RuntimeStateService.js';
 import { ConnectionRepository } from '../../shared/repositories/ConnectionRepository.js';
+import { ReviewQueueRepository } from '../../shared/repositories/ReviewQueueRepository.js';
+import { SqliteRepository } from '../../shared/repositories/SqliteRepository.js';
 
 const connectionRepo = new ConnectionRepository();
+const reviewQueueRepo = new ReviewQueueRepository();
+const schedulerRunsRepo = new SqliteRepository('scheduler_runs');
 
 export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
-
-export const randomDelay = (min = 8000, max = 25000) => {
-  return new Promise(resolve => setTimeout(resolve, randomBetween(min, max)));
-};
 
 /**
  * Updated to use ConnectionRepository
@@ -31,6 +31,29 @@ export async function getSystemState() {
   if (!state.currentWeek) {
     state.currentWeek = 1;
   }
+
+  // Operational Visibility Extensions
+  try {
+    const lastRun = schedulerRunsRepo.db.prepare(`SELECT * FROM scheduler_runs WHERE status = 'completed' ORDER BY start_time DESC LIMIT 1`).get();
+    if (lastRun) state.lastSuccessfulRun = lastRun.start_time;
+
+    const lastFailed = schedulerRunsRepo.db.prepare(`SELECT * FROM scheduler_runs WHERE status = 'failed' ORDER BY start_time DESC LIMIT 1`).get();
+    if (lastFailed) state.lastFailureReason = lastFailed.failure_reason;
+  } catch (e) {
+    // Table might not exist yet if migration hasn't run
+  }
+
+  state.emergencyStop = RuntimeStateService.getFlag('emergency_stop');
+  const pulse = RuntimeStateService.getPulse();
+  state.currentTask = pulse.activeTask;
+  
+  try {
+    const pendingReviews = reviewQueueRepo.db.prepare(`SELECT COUNT(*) as count FROM review_queue WHERE status = 'pending'`).get().count;
+    state.pendingReviewQueueCount = pendingReviews;
+  } catch (e) {
+    // ignore
+  }
+
   return state;
 }
 
@@ -67,16 +90,13 @@ export async function checkDailyLimit(filePath, maxDaily = 10) {
 }
 
 export async function appendReviewQueue(entry) {
-  const logFile = path.join(process.cwd(), 'data', 'review-queue.ndjson');
-  const dir = path.dirname(logFile);
-  await fsPromises.mkdir(dir, { recursive: true });
-  
-  const line = JSON.stringify({
-    ...entry,
-    timestamp: new Date().toISOString()
-  }) + '\n';
-  
-  await fsPromises.appendFile(logFile, line);
+  const { type, status, response, ...data } = entry;
+  reviewQueueRepo.create({
+    type: type || 'system',
+    status: status || 'pending',
+    response: response || null,
+    data: JSON.stringify(data)
+  });
 }
 
 export async function isSessionValid(page) {
@@ -97,7 +117,8 @@ export async function isSessionValid(page) {
         reason: reason,
         profile: 'system'
       });
-      await sendAlert(`LinkedIn security trigger: ${reason}. System paused.`);
+      await sendCritical(`LinkedIn security trigger: ${reason}. System paused.`);
+      RuntimeStateService.emergencyStop(); // Propagate stop signal
       return false;
     }
     return true;
@@ -135,6 +156,11 @@ export async function updateConnectionRecord(filePath, url, updates) {
     delete newData.url;
 
     connectionRepo.upsert(url, status, lastAction, newData);
+  } else {
+      // If it doesn't exist, we can't merge, so we just upsert with updates
+      const status = updates.status || 'sent';
+      const lastAction = updates.lastAction || 'connect';
+      connectionRepo.upsert(url, status, lastAction, updates);
   }
 }
 
@@ -198,10 +224,31 @@ export const appendAction = async (filePath, entry) => {
   await fsPromises.appendFile(filePath, line);
 };
 
+export function withTimeout(promise, ms, operationName) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Timeout exceeded: ${operationName} took longer than ${ms}ms`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
 // ─── Human-like interaction helpers ──────────────────────────────────────────
+
+export class EmergencyStopError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'EmergencyStopError';
+  }
+}
 
 export async function humanType(element, text) {
   for (const char of text) {
+    if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted typing');
     await element.type(char);
     await new Promise(r => setTimeout(r, randomBetween(30, 130)));
   }
@@ -218,6 +265,15 @@ export async function humanScroll(page) {
   await page.evaluate((px) => window.scrollBy(0, px), amount);
   await randomDelay(1000, 3000);
 }
+
+export const randomDelay = async (min = 8000, max = 25000) => {
+  const target = randomBetween(min, max);
+  const start = Date.now();
+  while (Date.now() - start < target) {
+    if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted delay');
+    await new Promise(r => setTimeout(r, Math.min(1000, target - (Date.now() - start))));
+  }
+};
 
 export function isWithinOperatingHours() {
   const hour = new Date().getHours();
