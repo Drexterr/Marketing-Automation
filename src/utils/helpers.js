@@ -215,10 +215,13 @@ export const appendAction = async (filePath, entry) => {
   await fsPromises.appendFile(filePath, line);
 };
 
-export function withTimeout(promise, ms, operationName) {
+export function withTimeout(promise, ms, operationName, controller = null) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
+      if (controller) {
+        controller.abort();
+      }
       reject(new Error(`Timeout exceeded: ${operationName} took longer than ${ms}ms`));
     }, ms);
   });
