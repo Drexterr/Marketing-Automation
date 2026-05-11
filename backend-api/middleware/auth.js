@@ -16,11 +16,27 @@ export function verifyPassword(password, storedHash) {
 }
 
 // In-memory token store for Phase 1
-export const activeTokens = new Set();
+export const activeTokens = new Map();
+
+// Token TTL: 24 hours
+const TOKEN_TTL = 24 * 60 * 60 * 1000;
+
+// Cleanup expired tokens every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, expiry] of activeTokens.entries()) {
+    if (expiry < now) {
+      activeTokens.delete(token);
+    }
+  }
+}, 60 * 60 * 1000).unref();
 
 export function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1] || req.cookies?.session_token;
-  if (!token || !activeTokens.has(token)) {
+  const expiry = activeTokens.get(token);
+  
+  if (!token || !expiry || expiry < Date.now()) {
+    if (token) activeTokens.delete(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
