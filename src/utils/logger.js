@@ -1,4 +1,5 @@
 import winston from 'winston';
+import 'winston-daily-rotate-file';
 import path from 'path';
 import fs from 'fs';
 import { ActivityRepository } from '../../shared/repositories/ActivityRepository.js';
@@ -43,6 +44,13 @@ class SqliteTransport extends winston.Transport {
   }
 }
 
+const commonRotationOptions = {
+  datePattern: 'YYYY-MM-DD',
+  zippedArchive: true,
+  maxSize: '20m',
+  maxFiles: '14d'
+};
+
 export const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -50,7 +58,27 @@ export const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: path.join(logDir, 'automation.log') }),
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'automation-%DATE%.log'),
+      ...commonRotationOptions
+    }),
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'errors-%DATE%.log'),
+      level: 'error',
+      ...commonRotationOptions
+    }),
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'ai-%DATE%.log'),
+      name: 'ai-log',
+      level: 'info',
+      ...commonRotationOptions
+    }),
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'security-%DATE%.log'),
+      name: 'security-log',
+      level: 'info',
+      ...commonRotationOptions
+    }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
@@ -60,5 +88,14 @@ export const logger = winston.createLogger({
     new SqliteTransport()
   ]
 });
+
+// Helper methods for specialized logging
+logger.security = (message, meta = {}) => {
+  logger.info(message, { ...meta, module: 'security' });
+};
+
+logger.ai = (message, meta = {}) => {
+  logger.info(message, { ...meta, module: 'ai' });
+};
 
 export default logger;
