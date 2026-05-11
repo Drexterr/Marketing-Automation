@@ -13,6 +13,7 @@
 import logger from './utils/logger.js';
 import { callCLI, testCLI } from './utils/claude-cli.js';
 import { getWebClient, closeWebClient } from './utils/claude-web.js';
+import { sanitizePromptInput } from './utils/sanitizer.js';
 
 const MODE = (process.env.CLAUDE_MODE || 'cli').toLowerCase(); // 'cli' | 'web'
 
@@ -33,18 +34,27 @@ function cleanJSON(text) {
 
 // Shared product + audience context injected into every prompt.
 function productCtx() {
+  const founderName = sanitizePromptInput(process.env.FOUNDER_NAME || 'a founder');
+  const productName = sanitizePromptInput(process.env.PRODUCT_NAME || 'a product');
+  const productDescription = sanitizePromptInput(process.env.PRODUCT_DESCRIPTION || '');
+  const icpPrimary = sanitizePromptInput(process.env.ICP_PRIMARY || '');
+  const icpSecondary = sanitizePromptInput(process.env.ICP_SECONDARY || '');
+  const icpTertiary = sanitizePromptInput(process.env.ICP_TERTIARY || '');
+  const icpExclude = sanitizePromptInput(process.env.ICP_EXCLUDE || '');
+  const icpCoreUser = sanitizePromptInput(process.env.ICP_CORE_USER || '');
+
   return `
 CONTEXT (read before answering):
-You are assisting ${process.env.FOUNDER_NAME || 'a founder'}, the founder of ${process.env.PRODUCT_NAME || 'a product'}.
-Product: ${process.env.PRODUCT_DESCRIPTION || ''}
+You are assisting ${founderName}, the founder of ${productName}.
+Product: ${productDescription}
 
 TARGET AUDIENCE:
-- Primary buyers: ${process.env.ICP_PRIMARY || ''}
-- Secondary (recommend/share): ${process.env.ICP_SECONDARY || ''}
-- Tertiary amplifiers: ${process.env.ICP_TERTIARY || ''}
-- NOT the audience: ${process.env.ICP_EXCLUDE || ''}
+- Primary buyers: ${icpPrimary}
+- Secondary (recommend/share): ${icpSecondary}
+- Tertiary amplifiers: ${icpTertiary}
+- NOT the audience: ${icpExclude}
 
-Core user to keep in mind: ${process.env.ICP_CORE_USER || ''}
+Core user to keep in mind: ${icpCoreUser}
 `.trim();
 }
 
@@ -69,6 +79,11 @@ export async function testClaudeConnection() {
  * Returns: { score: number, reason: string }
  */
 export async function evaluateConnectionTarget(profile) {
+  const name = sanitizePromptInput(profile.name);
+  const headline = sanitizePromptInput(profile.headline);
+  const company = sanitizePromptInput(profile.company || 'Unknown');
+  const about = sanitizePromptInput(profile.about || 'Not available');
+
   const prompt = `
 ${productCtx()}
 
@@ -90,10 +105,10 @@ NEGATIVE SIGNALS (subtract 2 each, minimum score 1):
 - Profile appears inactive or incomplete
 
 PROFILE TO SCORE:
-Name: ${profile.name}
-Headline: ${profile.headline}
-Current Company: ${profile.company || 'Unknown'}
-About: ${profile.about || 'Not available'}
+Name: ${name}
+Headline: ${headline}
+Current Company: ${company}
+About: ${about}
 Open to Work: ${profile.isOpenToWork ? 'YES' : 'NO'}
 
 OUTPUT RULE: Reply with ONLY valid JSON, no other text, no code fences:
@@ -114,6 +129,10 @@ OUTPUT RULE: Reply with ONLY valid JSON, no other text, no code fences:
  * Returns: plain text string, max 290 chars.
  */
 export async function generateConnectionNote(name, headline, company = '') {
+  const sName = sanitizePromptInput(name);
+  const sHeadline = sanitizePromptInput(headline);
+  const sCompany = sanitizePromptInput(company || 'not listed');
+
   const prompt = `
 ${productCtx()}
 
@@ -129,9 +148,9 @@ RULES:
 - Do NOT use salesy language
 
 PROFILE:
-Name: ${name}
-Headline: ${headline}
-Current Company: ${company || 'not listed'}
+Name: ${sName}
+Headline: ${sHeadline}
+Current Company: ${sCompany}
 
 OUTPUT RULE: Return ONLY the note text. No quotes, no explanation.
 `.trim();
@@ -147,6 +166,8 @@ OUTPUT RULE: Return ONLY the note text. No quotes, no explanation.
  * Returns: boolean
  */
 export async function isPostRelevant(postContent) {
+  const sContent = sanitizePromptInput(postContent.slice(0, 600));
+
   const prompt = `
 TASK: Decide if this LinkedIn post is relevant to the tech/startup/developer community.
 
@@ -154,10 +175,10 @@ RELEVANT topics: software engineering careers, coding interviews, job hunting in
 IRRELEVANT topics: cooking, fitness, travel, politics, sports, general motivational content, non-tech career advice, sales/marketing tips unrelated to tech.
 
 POST:
-${postContent.slice(0, 600)}
+${sContent}
 
 OUTPUT RULE: Reply with ONLY valid JSON, no other text:
-{"relevant": true/false, "reason": "<short phrase>"}
+{"relevant": true, "reason": "<short phrase>"}
 `.trim();
 
   try {
@@ -174,6 +195,8 @@ OUTPUT RULE: Reply with ONLY valid JSON, no other text:
  * Returns: plain text string.
  */
 export async function generateFeedComment(postContent) {
+  const sContent = sanitizePromptInput(postContent.slice(0, 800));
+
   const prompt = `
 ${productCtx()}
 
@@ -188,7 +211,7 @@ RULES:
 - Sound like a thoughtful practitioner adding a real perspective
 
 POST:
-${postContent.slice(0, 800)}
+${sContent}
 
 OUTPUT RULE: Return ONLY the comment text. No quotes, no explanation.
 `.trim();
@@ -201,6 +224,11 @@ OUTPUT RULE: Return ONLY the comment text. No quotes, no explanation.
  * Returns: plain text string, max 400 chars.
  */
 export async function generateFirstMessage(profile) {
+  const sName = sanitizePromptInput(profile.name);
+  const sHeadline = sanitizePromptInput(profile.headline);
+  const sCompany = sanitizePromptInput(profile.company || 'not listed');
+  const sAbout = sanitizePromptInput(profile.about || '');
+
   const prompt = `
 ${productCtx()}
 
@@ -216,10 +244,10 @@ RULES:
 - Do NOT start with "Hey [name]!" — too salesy
 
 PROFILE:
-Name: ${profile.name}
-Headline: ${profile.headline}
-Current Company: ${profile.company || 'not listed'}
-About: ${profile.about || ''}
+Name: ${sName}
+Headline: ${sHeadline}
+Current Company: ${sCompany}
+About: ${sAbout}
 
 OUTPUT RULE: Return ONLY the message text. No quotes, no explanation.
 `.trim();
@@ -235,6 +263,10 @@ OUTPUT RULE: Return ONLY the message text. No quotes, no explanation.
  * needs a human to handle it (pricing, enterprise, complaints, etc).
  */
 export async function generateReplyResponse(profile, incomingMessage) {
+  const sName = sanitizePromptInput(profile.name);
+  const sHeadline = sanitizePromptInput(profile.headline);
+  const sIncoming = sanitizePromptInput(incomingMessage);
+
   const prompt = `
 ${productCtx()}
 
@@ -258,8 +290,8 @@ ESCALATE TO HUMAN (reply with ONLY the word ESC_HUMAN, nothing else) if the mess
 - Angry or negative tone requiring careful handling
 - Something completely unrelated to the product
 
-INCOMING MESSAGE FROM ${profile.name} (${profile.headline}):
-"${incomingMessage}"
+INCOMING MESSAGE FROM ${sName} (${sHeadline}):
+"${sIncoming}"
 
 OUTPUT RULE: Return ONLY the reply text, or ONLY the word ESC_HUMAN if escalating.
 `.trim();
@@ -273,6 +305,8 @@ OUTPUT RULE: Return ONLY the reply text, or ONLY the word ESC_HUMAN if escalatin
  * Returns: plain text string.
  */
 export async function generateLinkedInPost(topic) {
+  const sTopic = sanitizePromptInput(topic);
+
   const prompt = `
 ${productCtx()}
 
@@ -287,7 +321,7 @@ RULES:
 - Tell a real insight, observation, or story — not a promo piece
 - The product can be referenced naturally if it fits, but this is NOT an ad
 
-TOPIC: ${topic}
+TOPIC: ${sTopic}
 
 OUTPUT RULE: Return ONLY the post text. No title, no explanation.
 `.trim();
