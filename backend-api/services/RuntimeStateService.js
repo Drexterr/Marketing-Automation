@@ -17,5 +17,15 @@ export const RuntimeStateService = {
             flags[row.key] = JSON.parse(row.value);
         });
         return flags;
+    },
+    setPulse: (data) => {
+        const pulse = {
+            ...data,
+            lastHeartbeat: new Date().toISOString()
+        };
+        repo.set('runtime_pulse', pulse);
+    },
+    getPulse: () => {
+        return repo.get('runtime_pulse') || { status: 'IDLE', activeTask: null };
     }
 };
