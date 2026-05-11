@@ -39,4 +39,14 @@ export const emergencyStop = async () => {
   return data;
 };
 
+export const getReviewQueue = async () => {
+  const { data } = await api.get('/review-queue');
+  return data;
+};
+
+export const updateReviewItem = async (id: string, status: string, response?: string) => {
+  const { data } = await api.post(`/review-queue/${id}`, { status, response });
+  return data;
+};
+
 export default api;
