@@ -183,7 +183,7 @@ export async function runConnectionWorkflow(page) {
       } catch (error) {
         if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
           logger.info('Connect task aborted gracefully due to emergency stop.');
-          break; // Stop processing further profiles
+          return; // Stop all processing
         }
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
         failed++;
