@@ -208,6 +208,8 @@ export async function runConnectionWorkflow(page) {
     dailyLimitHit,
     weeklyLimitRemaining: Math.max(0, weeklyLimit - sentInLastWeek)
   });
+
+  return { recordsProcessed: connectionsSent };
 }
 
 async function sendConnectionRequest(page, profile, score, note, keyword) {
