@@ -131,3 +131,107 @@ test('runScheduler stops after tasks but before rescheduling when emergency_stop
     
     assert.strictEqual(state.nextScheduledRun, past.toISOString(), 'nextScheduledRun should not have been updated');
 });
+
+test('runScheduler reports pulse status correctly', async () => {
+    const originalSetPulse = RuntimeStateService.setPulse;
+    const originalSetTimeout = global.setTimeout;
+    const pulseHistory = [];
+    
+    // Mock setTimeout to resolve immediately
+    global.setTimeout = (fn, ms) => {
+        return originalSetTimeout(fn, 0);
+    };
+
+    RuntimeStateService.setPulse = (data) => {
+        pulseHistory.push(data);
+    };
+
+    try {
+        const now = new Date();
+        const past = new Date(now.getTime() - 1000);
+        RuntimeStateService.setFlag('system_state', { nextScheduledRun: past.toISOString() });
+
+        // Trigger emergency stop after one task execution
+        const tasksWithStop = [
+            async function MockTask() {
+                RuntimeStateService.setFlag('emergency_stop', true);
+            }
+        ];
+
+        const schedulerPromise = runScheduler(tasksWithStop);
+        const timeoutPromise = new Promise((_, reject) => originalSetTimeout(() => reject(new Error('Scheduler hung')), 2000));
+        
+        await Promise.race([schedulerPromise, timeoutPromise]);
+
+        // Expected pulse sequence:
+        // 1. ACTIVE, 'Starting workflows'
+        // 2. ACTIVE, 'MockTask', progressPercent: 0
+        // 3. ACTIVE, 'Waiting after MockTask', progressPercent: 100
+        
+        const startingWorkflows = pulseHistory.find(p => p.activeTask === 'Starting workflows');
+        const runningTask = pulseHistory.find(p => p.activeTask === 'MockTask');
+        const waitingAfter = pulseHistory.find(p => p.activeTask === 'Waiting after MockTask');
+
+        assert(startingWorkflows, 'Should report starting workflows');
+        assert.strictEqual(startingWorkflows.status, 'ACTIVE');
+
+        assert(runningTask, 'Should report running task');
+        assert.strictEqual(runningTask.status, 'ACTIVE');
+        assert.strictEqual(runningTask.progressPercent, 0);
+
+        assert(waitingAfter, 'Should report waiting after task');
+        assert.strictEqual(waitingAfter.status, 'ACTIVE');
+        assert.strictEqual(waitingAfter.progressPercent, 100);
+
+    } finally {
+        RuntimeStateService.setPulse = originalSetPulse;
+        global.setTimeout = originalSetTimeout;
+        RuntimeStateService.setFlag('emergency_stop', false);
+        RuntimeStateService.setFlag('system_state', null);
+    }
+});
+
+test('runScheduler reports Sleeping status when not time to run', async () => {
+    const originalSetPulse = RuntimeStateService.setPulse;
+    const originalSetTimeout = global.setTimeout;
+    const pulseHistory = [];
+    
+    global.setTimeout = (fn, ms) => {
+        return originalSetTimeout(fn, 0);
+    };
+
+    RuntimeStateService.setPulse = (data) => {
+        pulseHistory.push(data);
+    };
+
+    try {
+        const now = new Date();
+        const future = new Date(now.getTime() + 100000);
+        RuntimeStateService.setFlag('system_state', { nextScheduledRun: future.toISOString() });
+
+        // We need it to run at least one loop iteration and then stop
+        // Setting emergency_stop after a short delay might work, 
+        // but since we mocked setTimeout to 0, it will loop very fast.
+        
+        // Let's use a counter in setPulse to trigger emergency stop
+        RuntimeStateService.setPulse = (data) => {
+            pulseHistory.push(data);
+            RuntimeStateService.setFlag('emergency_stop', true);
+        };
+
+        const schedulerPromise = runScheduler([]);
+        const timeoutPromise = new Promise((_, reject) => originalSetTimeout(() => reject(new Error('Scheduler hung')), 2000));
+        
+        await Promise.race([schedulerPromise, timeoutPromise]);
+
+        const sleepingPulse = pulseHistory.find(p => p.activeTask === 'Sleeping');
+        assert(sleepingPulse, 'Should report sleeping');
+        assert.strictEqual(sleepingPulse.status, 'IDLE');
+
+    } finally {
+        RuntimeStateService.setPulse = originalSetPulse;
+        global.setTimeout = originalSetTimeout;
+        RuntimeStateService.setFlag('emergency_stop', false);
+        RuntimeStateService.setFlag('system_state', null);
+    }
+});

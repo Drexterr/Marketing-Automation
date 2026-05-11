@@ -143,12 +143,15 @@ export async function runFeedCommenting(count = 3) {
       logger.warn('Feed exhausted — exiting early');
     }
 
+    return { recordsProcessed: commentsSent };
+
   } catch (error) {
     if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
       logger.info('Feed commenting workflow aborted gracefully due to emergency stop.');
     } else {
       logger.error('Feed commenting workflow failed', { message: error.message });
     }
+    return { recordsProcessed: commentsSent || 0 };
   } finally {
     await browserManager.close();
   }
