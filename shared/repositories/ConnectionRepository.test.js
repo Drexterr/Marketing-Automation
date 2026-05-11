@@ -23,6 +23,16 @@ test('ConnectionRepository operations', async (t) => {
         const updated = repo.findByProfileUrl(profileUrl);
         assert.equal(updated.status, 'accepted');
         assert.equal(JSON.parse(updated.data).replied, true);
+
+        // Test COALESCE and json_patch in upsert
+        repo.upsert(profileUrl, null, null, { new_field: 'value' });
+        const patched = repo.findByProfileUrl(profileUrl);
+        assert.equal(patched.status, 'accepted'); // Should preserve existing status
+        assert.equal(patched.last_action, 'message'); // Should preserve existing last_action
+        const patchedData = JSON.parse(patched.data);
+        assert.equal(patchedData.note, 'Hello'); // Should preserve existing data
+        assert.equal(patchedData.replied, true); // Should preserve existing data
+        assert.equal(patchedData.new_field, 'value'); // Should add new field
     });
 
     await t.test('should count sent today', () => {

@@ -144,24 +144,15 @@ export async function logSessionSummary(summary) {
  * Updated to use ConnectionRepository
  */
 export async function updateConnectionRecord(filePath, url, updates) {
-  const existing = connectionRepo.findByProfileUrl(url);
-  if (existing) {
-    const status = updates.status || existing.status;
-    const lastAction = updates.lastAction || existing.last_action;
-    const currentData = JSON.parse(existing.data || '{}');
-    const newData = { ...currentData, ...updates };
-    // Remove fields that are now top-level
-    delete newData.status;
-    delete newData.lastAction;
-    delete newData.url;
+  const status = updates.status || null;
+  const lastAction = updates.lastAction || null;
+  
+  const newData = { ...updates };
+  delete newData.status;
+  delete newData.lastAction;
+  delete newData.url;
 
-    connectionRepo.upsert(url, status, lastAction, newData);
-  } else {
-      // If it doesn't exist, we can't merge, so we just upsert with updates
-      const status = updates.status || 'sent';
-      const lastAction = updates.lastAction || 'connect';
-      connectionRepo.upsert(url, status, lastAction, updates);
-  }
+  connectionRepo.upsert(url, status, lastAction, newData);
 }
 
 /**

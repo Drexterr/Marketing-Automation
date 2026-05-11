@@ -10,26 +10,27 @@ export class ConnectionRepository extends SqliteRepository {
     }
 
     upsert(profileUrl, status, lastAction, data) {
-        const existing = this.findByProfileUrl(profileUrl);
-        const record = {
-            profile_url: profileUrl,
-            status,
-            last_action: lastAction,
-            data: JSON.stringify(data)
-        };
+        const now = new Date().toISOString();
+        const dataStr = JSON.stringify(data || {});
 
-        if (existing) {
-            return this.update(existing.id, record);
-        } else {
-            return this.create(record);
-        }
+        this.db.prepare(`
+            INSERT INTO connections (profile_url, status, last_action, data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(profile_url) DO UPDATE SET
+                status = COALESCE(excluded.status, connections.status),
+                last_action = COALESCE(excluded.last_action, connections.last_action),
+                data = json_patch(connections.data, excluded.data),
+                updated_at = excluded.updated_at
+        `).run(profileUrl, status, lastAction, dataStr, now, now);
+
+        return this.findByProfileUrl(profileUrl);
     }
 
     countSentInLast7Days() {
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE status = 'sent' AND updated_at > ?
+            WHERE status = 'sent' AND datetime(created_at) > datetime(?)
         `).get(oneWeekAgo).count;
     }
 
@@ -39,7 +40,7 @@ export class ConnectionRepository extends SqliteRepository {
         const startOfDayIso = startOfDay.toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE (status = 'sent' OR status = 'accepted') AND updated_at > ?
+            WHERE (status = 'sent' OR status = 'accepted') AND datetime(created_at) > datetime(?)
         `).get(startOfDayIso).count;
     }
 
