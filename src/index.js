@@ -16,6 +16,7 @@ import { runScheduler } from './scheduler.js';
 import { startDashboard } from './dashboard-server.js';
 import logger from './utils/logger.js';
 import { getDashboardHash } from '../backend-api/middleware/auth.js';
+import db from '../backend-api/db/init.js';
 
 function validateSystem() {
   try {
@@ -24,6 +25,10 @@ function validateSystem() {
     }
     // Pre-hash password and validate it can be hashed
     getDashboardHash();
+
+    // Check DB integrity
+    db.prepare('SELECT 1').get();
+    
     logger.info('System validation passed');
   } catch (error) {
     logger.error('CRITICAL: System validation failed', { error: error.message });
