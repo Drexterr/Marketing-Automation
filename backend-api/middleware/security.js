@@ -14,9 +14,11 @@ export const securityMiddleware = (app) => {
   app.use(helmet());
 
   // CORS - allow only localhost
+  const allowedOrigins = ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
+  
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+    if (origin && allowedOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -26,12 +28,6 @@ export const securityMiddleware = (app) => {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
-    next();
-  });
-
-  // Strict SameSite cookie policy
-  app.use((req, res, next) => {
-    res.cookie('SameSite', 'Strict', { secure: process.env.NODE_ENV === 'production' });
     next();
   });
 };
