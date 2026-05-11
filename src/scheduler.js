@@ -2,11 +2,13 @@ import logger from './utils/logger.js';
 import { randomBetween, getSystemState, updateSystemState, withTimeout } from './utils/helpers.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import { SqliteRepository } from '../shared/repositories/SqliteRepository.js';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const LOCK_FILE = path.join(process.cwd(), 'data', 'scheduler.lock');
 const runsRepo = new SqliteRepository('scheduler_runs');
+const connectionRepo = new ConnectionRepository();
 
 async function interruptibleSleep(ms) {
   const start = Date.now();
@@ -61,10 +63,10 @@ export async function runScheduler(tasks) {
     }
 
     // Recover orphaned connections
-    const orphanedConnections = runsRepo.db.prepare(`SELECT id, profile_url, status FROM connections WHERE status IN ('pending', 'sending_connection')`).all();
+    const orphanedConnections = connectionRepo.db.prepare(`SELECT id, profile_url, status FROM connections WHERE status IN ('pending', 'sending_connection')`).all();
     if (orphanedConnections.length > 0) {
+      connectionRepo.db.prepare(`UPDATE connections SET status = 'failed', last_action = 'crash_recovery', updated_at = CURRENT_TIMESTAMP WHERE status IN ('pending', 'sending_connection')`).run();
       for (const conn of orphanedConnections) {
-        runsRepo.db.prepare(`UPDATE connections SET status = 'failed', last_action = 'crash_recovery', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(conn.id);
         logger.warn(`Recovered orphaned connection ${conn.profile_url} and marked as failed.`);
       }
     }
