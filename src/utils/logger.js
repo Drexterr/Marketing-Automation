@@ -22,12 +22,17 @@ class SqliteTransport extends winston.Transport {
 
     try {
       // Avoid logging internal DB logs to DB to prevent recursion if any
-      const { level, message, module, ...details } = info;
+      const { level, message, module, ...meta } = info;
+      
+      const details = {
+        message,
+        ...meta
+      };
       
       this.activityRepo.log(
         level,
         module || 'system',
-        details && Object.keys(details).length > 0 ? details : message
+        details
       );
     } catch (err) {
       // Silently fail DB logging to avoid crashing the main process
