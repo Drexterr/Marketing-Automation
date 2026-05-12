@@ -1,8 +1,8 @@
 import logger from './utils/logger.js';
-import { randomDelay, isSessionValid, updateSystemState, getSystemState } from './utils/helpers.js';
+import { randomDelay, isSessionValid, updateSystemState, getSystemState, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
 import { generateLinkedInPost } from './claude-service.js';
 
-export async function runPostContent(page) {
+export async function runPostContent(page, signal = null) {
   const state = await getSystemState();
   if (process.env.ENABLE_AUTO_POST !== 'true') {
     logger.info('Auto-post is disabled (ENABLE_AUTO_POST != true). Skipping.');
@@ -37,22 +37,22 @@ export async function runPostContent(page) {
 
   try {
     await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'networkidle' });
-    await randomDelay(5000, 8000);
+    await randomDelay(5000, 8000, signal);
 
     const startPostButton = await page.$('.share-box-feed-entry__trigger');
     if (startPostButton) {
-      await startPostButton.click();
-      await randomDelay(2000, 4000);
+      await humanClick(startPostButton, signal);
+      await randomDelay(2000, 4000, signal);
 
       const editor = await page.$('.ql-editor[role="textbox"]');
       if (editor) {
-        await editor.type(postContent, { delay: 50 });
-        await randomDelay(3000, 5000);
+        await humanType(editor, postContent, signal);
+        await randomDelay(3000, 5000, signal);
 
         const postButton = await page.$('.share-actions__primary-action');
         if (postButton) {
-          await postButton.click();
-          await randomDelay(5000, 10000);
+          await humanClick(postButton, signal);
+          await randomDelay(5000, 10000, signal);
           
           await updateSystemState({ lastPostDate: now.toISOString() });
           logger.info('Successfully posted LinkedIn content.');
@@ -61,7 +61,11 @@ export async function runPostContent(page) {
       }
     }
   } catch (error) {
-    logger.error('Failed to post LinkedIn content', { error: error.message });
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
+      logger.info('Post content workflow aborted gracefully due to emergency stop or timeout.');
+    } else {
+      logger.error('Failed to post LinkedIn content', { error: error.message });
+    }
   }
   return { recordsProcessed: posted ? 1 : 0 };
 }

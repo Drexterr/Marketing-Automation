@@ -129,10 +129,11 @@ export async function runScheduler(tasks) {
           break;
         }
 
+        const controller = new AbortController();
         RuntimeStateService.setPulse({ status: 'ACTIVE', activeTask: task.name || 'Running task', progressPercent: 0 });
         try {
           // 15-minute timeout per major task
-          const result = await withTimeout(task(), 15 * 60 * 1000, task.name || 'Anonymous Task');
+          const result = await withTimeout(task(controller.signal), 15 * 60 * 1000, task.name || 'Anonymous Task', controller);
           if (result && result.recordsProcessed) {
             totalRecords += result.recordsProcessed;
             runsRepo.update(currentRunId, { records_processed: totalRecords });

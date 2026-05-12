@@ -1,13 +1,18 @@
 import logger from './utils/logger.js';
 import { loadConnections, updateConnectionRecord } from './utils/helpers.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 
-export async function runFollowUpMarking() {
+export async function runFollowUpMarking(signal = null) {
   logger.info('Running follow-up scheduler...');
   const records = loadConnections();
   const now = new Date().getTime();
   let updatedCount = 0;
 
   for (const record of records) {
+    if (RuntimeStateService.shouldStop('followup') || signal?.aborted) {
+      logger.info('Follow-up marking interrupted by system signal');
+      break;
+    }
     // Only mark as eligible if they were sent a first message and haven't replied or been closed
     if (record.stage === 'first_message_sent' && record.timestamp) {
       const sentTime = new Date(record.timestamp).getTime();
@@ -27,4 +32,5 @@ export async function runFollowUpMarking() {
   }
 
   logger.info(`Follow-up scheduler finished. Marked ${updatedCount} leads.`);
+  return { recordsProcessed: updatedCount };
 }

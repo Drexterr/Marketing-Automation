@@ -7,7 +7,7 @@ import path from 'path';
 
 const COMMENTS_FILE = path.join(process.cwd(), 'data', 'comments-sent.json');
 
-export async function runFeedCommenting(count = 3) {
+export async function runFeedCommenting(count = 3, signal = null) {
   const browserManager = new BrowserManager();
   const page = await browserManager.launch(process.env.HEADLESS === 'true');
 
@@ -18,7 +18,7 @@ export async function runFeedCommenting(count = 3) {
   if (!isWithinOperatingHours()) {
     logger.warn('Outside operating hours (9am–8pm). Skipping feed run.');
     await browserManager.close();
-    return;
+    return { recordsProcessed: 0 };
   }
 
   const feedData = loadFeedData(COMMENTS_FILE);
@@ -27,28 +27,28 @@ export async function runFeedCommenting(count = 3) {
     feedData.map(e => [e.urn, e.relevant])
   );
 
+  let commentsSent = 0;
   try {
     logger.info('Navigating to LinkedIn feed');
     await page.goto('https://www.linkedin.com/feed/');
     await page.waitForSelector('.scaffold-layout__main', { timeout: 30000 });
 
-    let commentsSent = 0;
     let scrollAttempts = 0;
     const MAX_SCROLL_ATTEMPTS = 20;
 
     while (commentsSent < count && scrollAttempts < MAX_SCROLL_ATTEMPTS) {
-      if (RuntimeStateService.shouldStop('feed')) {
+      if (RuntimeStateService.shouldStop('feed') || signal?.aborted) {
         logger.info('Feed task interrupted by system signal');
-        return;
+        return { recordsProcessed: commentsSent };
       }
 
       const posts = await page.$$('.feed-shared-update-v2');
       let newPostsFound = false;
 
       for (const post of posts) {
-        if (RuntimeStateService.shouldStop('feed')) {
+        if (RuntimeStateService.shouldStop('feed') || signal?.aborted) {
           logger.info('Feed task interrupted by system signal');
-          return;
+          return { recordsProcessed: commentsSent };
         }
 
         // Mid-loop safety check
@@ -97,18 +97,18 @@ export async function runFeedCommenting(count = 3) {
           const commentButton = await post.$('button:has-text("Comment")');
           if (!commentButton) continue;
           
-          await humanClick(commentButton);
-          await randomDelay(1000, 2000);
+          await humanClick(commentButton, signal);
+          await randomDelay(1000, 2000, signal);
 
           const editor = await post.$('.ql-editor[role="textbox"]');
           if (!editor) continue;
 
-          await humanType(editor, comment);
-          await randomDelay(1000, 3000);
+          await humanType(editor, comment, signal);
+          await randomDelay(1000, 3000, signal);
 
           const postButton = await post.$('button.comments-comment-box__submit-button');
           if (postButton) {
-            await humanClick(postButton);
+            await humanClick(postButton, signal);
             logger.info('Successfully posted comment');
 
             await appendAction(COMMENTS_FILE, {
@@ -119,12 +119,12 @@ export async function runFeedCommenting(count = 3) {
               status: 'sent',
             });
             commentsSent++;
-            await randomDelay(60000, 120000);
+            await randomDelay(60000, 120000, signal);
           }
         } catch (err) {
-          if (err instanceof EmergencyStopError || err.message.includes('EmergencyStopError')) {
-            logger.info('Feed task aborted gracefully due to emergency stop.');
-            return;
+          if (err instanceof EmergencyStopError || err.message.includes('EmergencyStopError') || err.message.includes('aborted')) {
+            logger.info('Feed task aborted gracefully due to emergency stop or timeout.');
+            return { recordsProcessed: commentsSent };
           }
           logger.error(`Failed to comment on post ${urn}`, { message: err.message });
         }
@@ -135,7 +135,7 @@ export async function runFeedCommenting(count = 3) {
 
       if (commentsSent < count && scrollAttempts < MAX_SCROLL_ATTEMPTS) {
         logger.info(`Progress: ${commentsSent}/${count}. Scrolling for more posts...`);
-        await humanScroll(page);
+        await humanScroll(page, signal);
       }
     }
 
@@ -146,8 +146,8 @@ export async function runFeedCommenting(count = 3) {
     return { recordsProcessed: commentsSent };
 
   } catch (error) {
-    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
-      logger.info('Feed commenting workflow aborted gracefully due to emergency stop.');
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
+      logger.info('Feed commenting workflow aborted gracefully due to emergency stop or timeout.');
     } else {
       logger.error('Feed commenting workflow failed', { message: error.message });
     }

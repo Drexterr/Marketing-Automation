@@ -3,7 +3,8 @@ import path from 'path';
 import logger from './utils/logger.js';
 import { loadConnections } from './utils/helpers.js';
 
-export async function generateDashboardSummary() {
+export async function generateDashboardSummary(signal = null) {
+  if (signal?.aborted) return { recordsProcessed: 0 };
   const records = loadConnections('connections');
   
   const metrics = {

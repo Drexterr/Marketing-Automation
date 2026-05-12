@@ -47,11 +47,11 @@ export async function searchAndExtractProfiles(page, keyword) {
   }
 }
 
-async function scrapeProfileDetails(page, profile) {
+async function scrapeProfileDetails(page, profile, signal = null) {
   logger.info(`Deep scraping profile: ${profile.name}`);
   try {
     await page.goto(profile.url, { waitUntil: 'networkidle' });
-    await randomDelay(5000, 10000);
+    await randomDelay(5000, 10000, signal);
 
     const details = await page.evaluate(() => {
       const about = document.querySelector('#about ~ .pvs-list span[aria-hidden=true]')?.innerText || '';
@@ -64,7 +64,7 @@ async function scrapeProfileDetails(page, profile) {
     profile.isOpenToWork = details.isOpenToWork;
     logger.info(`Scraped details for ${profile.name}: OpenToWork=${profile.isOpenToWork}`);
   } catch (error) {
-    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
       throw error;
     }
     logger.warn(`Failed to deep scrape ${profile.name}`, { message: error.message });
@@ -77,10 +77,10 @@ function evaluationScoreHeuristic(headline) {
   return techKeywords.some(kw => lowerHeadline.includes(kw));
 }
 
-export async function runConnectionWorkflow(page) {
+export async function runConnectionWorkflow(page, signal = null) {
   if (!isWithinOperatingHours()) {
     logger.warn('Outside operating hours (9am–8pm). Skipping run.');
-    return;
+    return { recordsProcessed: 0 };
   }
 
   if (!(await isSessionValid(page))) {
@@ -98,9 +98,9 @@ export async function runConnectionWorkflow(page) {
   logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Cap = ${dailyCap}`);
 
   for (const keyword of keywords) {
-    if (RuntimeStateService.shouldStop('connect')) {
+    if (RuntimeStateService.shouldStop('connect') || signal?.aborted) {
       logger.info('Connect task interrupted by system signal');
-      return;
+      return { recordsProcessed: connectionsSent };
     }
 
     if (!checkWeeklyLimit('connections', weeklyLimit)) {
@@ -117,9 +117,9 @@ export async function runConnectionWorkflow(page) {
     const profiles = await searchAndExtractProfiles(page, keyword);
 
     for (const profile of profiles) {
-      if (RuntimeStateService.shouldStop('connect')) {
+      if (RuntimeStateService.shouldStop('connect') || signal?.aborted) {
         logger.info('Connect task interrupted by system signal');
-        return;
+        return { recordsProcessed: connectionsSent };
       }
 
       // Mid-loop safety check
@@ -147,7 +147,7 @@ export async function runConnectionWorkflow(page) {
                                profile.headline.toLowerCase().includes('looking');
         
         if (isHighPriority || evaluationScoreHeuristic(profile.headline)) {
-          await scrapeProfileDetails(page, profile);
+          await scrapeProfileDetails(page, profile, signal);
         }
 
         const evaluation = await claudeService.evaluateConnectionTarget(profile);
@@ -169,21 +169,21 @@ export async function runConnectionWorkflow(page) {
             messageDraftedAt: new Date().toISOString()
           });
 
-          const sent = await sendConnectionRequest(page, profile, evaluation.score, note, keyword);
+          const sent = await sendConnectionRequest(page, profile, evaluation.score, note, keyword, signal);
           if (sent) {
             connectionsSent++;
-            await randomDelay(); // Uses new Phase 3 defaults (8-25s)
+            await randomDelay(8000, 25000, signal); // Uses new Phase 3 defaults (8-25s)
           } else {
             failed++;
           }
         } else {
           logger.info(`Skipping ${profile.name} (low score)`);
-          await randomDelay(3000, 7000);
+          await randomDelay(3000, 7000, signal);
         }
       } catch (error) {
-        if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
-          logger.info('Connect task aborted gracefully due to emergency stop.');
-          return; // Stop all processing
+        if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
+          logger.info('Connect task aborted gracefully due to emergency stop or timeout.');
+          return { recordsProcessed: connectionsSent }; // Stop all processing
         }
         logger.error(`Error processing profile ${profile.name}`, { error: error.message });
         failed++;
@@ -193,7 +193,7 @@ export async function runConnectionWorkflow(page) {
     if (dailyLimitHit || !checkWeeklyLimit('connections', weeklyLimit)) break;
 
     logger.info(`Finished keyword "${keyword}". Waiting before next search...`);
-    await randomDelay(10000, 20000);
+    await randomDelay(10000, 20000, signal);
   }
 
   // Summary logic
@@ -212,8 +212,8 @@ export async function runConnectionWorkflow(page) {
   return { recordsProcessed: connectionsSent };
 }
 
-async function sendConnectionRequest(page, profile, score, note, keyword) {
-  if (RuntimeStateService.shouldStop('connect')) {
+async function sendConnectionRequest(page, profile, score, note, keyword, signal = null) {
+  if (RuntimeStateService.shouldStop('connect') || signal?.aborted) {
     logger.info('Connect task interrupted by system signal');
     return false;
   }
@@ -223,15 +223,15 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
 
   try {
     await page.goto(profile.url, { waitUntil: 'networkidle' });
-    await randomDelay(5000, 8000);
+    await randomDelay(5000, 8000, signal);
 
     let connectButton = await page.$('button.pvs-profile-actions__action:has-text("Connect")');
 
     if (!connectButton) {
       const moreButton = await page.$('button[aria-label="More actions"]');
       if (moreButton) {
-        await humanClick(moreButton);
-        await randomDelay(1000, 2000);
+        await humanClick(moreButton, signal);
+        await randomDelay(1000, 2000, signal);
         connectButton = await page.$('div[role="button"]:has-text("Connect")');
       }
     }
@@ -240,25 +240,25 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
       logger.warn(`Connect button not found for ${profile.name}`);
       failureReason = 'connect_button_not_found';
     } else {
-      await humanClick(connectButton);
-      await randomDelay(2000, 4000);
+      await humanClick(connectButton, signal);
+      await randomDelay(2000, 4000, signal);
 
       const addNoteButton = await page.$('button[aria-label="Add a note"]');
       if (!addNoteButton) {
         logger.warn(`"Add a note" button not found for ${profile.name}`);
         failureReason = 'note_dialog_missing';
         const cancelButton = await page.$('button[aria-label="Dismiss"]');
-        if (cancelButton) await humanClick(cancelButton);
+        if (cancelButton) await humanClick(cancelButton, signal);
       } else {
-        await humanClick(addNoteButton);
-        await randomDelay(2000, 3000);
+        await humanClick(addNoteButton, signal);
+        await randomDelay(2000, 3000, signal);
 
         const editor = await page.$('textarea[name="message"]');
         if (editor) {
-          await humanType(editor, note);
-          await randomDelay(2000, 4000);
+          await humanType(editor, note, signal);
+          await randomDelay(2000, 4000, signal);
           const sendButton = await page.$('button[aria-label="Send now"]');
-          if (sendButton) await humanClick(sendButton);
+          if (sendButton) await humanClick(sendButton, signal);
           success = true;
           logger.info(`Successfully sent request to ${profile.name}`);
         } else {
@@ -267,7 +267,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword) {
       }
     }
   } catch (error) {
-    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError')) {
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
       throw error;
     }
     logger.error(`Failed to send connection request to ${profile.name}`, { error: error.message });

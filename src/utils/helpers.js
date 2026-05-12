@@ -240,30 +240,34 @@ export class EmergencyStopError extends Error {
   }
 }
 
-export async function humanType(element, text) {
+export async function humanType(element, text, signal = null) {
   for (const char of text) {
+    if (signal?.aborted) throw new Error('Task aborted by timeout');
     if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted typing');
     await element.type(char);
     await new Promise(r => setTimeout(r, randomBetween(30, 130)));
   }
 }
 
-export async function humanClick(element) {
+export async function humanClick(element, signal = null) {
+  if (signal?.aborted) throw new Error('Task aborted by timeout');
   await element.hover();
   await new Promise(r => setTimeout(r, randomBetween(200, 500)));
   await element.click();
 }
 
-export async function humanScroll(page) {
+export async function humanScroll(page, signal = null) {
+  if (signal?.aborted) throw new Error('Task aborted by timeout');
   const amount = randomBetween(300, 900);
   await page.evaluate((px) => window.scrollBy(0, px), amount);
-  await randomDelay(1000, 3000);
+  await randomDelay(1000, 3000, signal);
 }
 
-export const randomDelay = async (min = 8000, max = 25000) => {
+export const randomDelay = async (min = 8000, max = 25000, signal = null) => {
   const target = randomBetween(min, max);
   const start = Date.now();
   while (Date.now() - start < target) {
+    if (signal?.aborted) throw new Error('Task aborted by timeout');
     if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted delay');
     await new Promise(r => setTimeout(r, Math.min(1000, target - (Date.now() - start))));
   }

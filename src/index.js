@@ -117,7 +117,7 @@ async function setup() {
   }
 }
 
-async function connect() {
+async function connect(signal) {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
@@ -132,7 +132,7 @@ async function connect() {
   }
 }
 
-async function feed() {
+async function feed(signal) {
   try {
     const result = await runFeedCommenting(3);
     return result;
@@ -142,7 +142,7 @@ async function feed() {
   }
 }
 
-async function firstMessage() {
+async function firstMessage(signal) {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
@@ -157,7 +157,7 @@ async function firstMessage() {
   }
 }
 
-async function replies() {
+async function replies(signal) {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');
@@ -176,7 +176,7 @@ async function replies() {
   }
 }
 
-async function followups() {
+async function followups(signal) {
   try {
     const result = await runFollowUpMarking();
     await generateDashboardSummary();
@@ -187,7 +187,7 @@ async function followups() {
   }
 }
 
-async function analytics() {
+async function analytics(signal) {
   try {
     await generateDashboardSummary();
     return { recordsProcessed: 0 };
@@ -197,7 +197,7 @@ async function analytics() {
   }
 }
 
-async function post() {
+async function post(signal) {
   const browserManager = new BrowserManager();
   try {
     const page = await browserManager.launch(process.env.HEADLESS === 'true');

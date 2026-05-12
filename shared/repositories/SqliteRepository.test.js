@@ -11,6 +11,7 @@ test('SqliteRepository CRUD operations', async (t) => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
         value TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
 

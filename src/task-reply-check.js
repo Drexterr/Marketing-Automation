@@ -1,32 +1,33 @@
 import logger from './utils/logger.js';
-import { isSessionValid, loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay } from './utils/helpers.js';
+import { isSessionValid, loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 
 const INTENT_KEYWORDS = ['pricing', 'demo', 'interested', 'tell me more', "let's talk", 'book', 'calendar', 'schedule'];
 
-export async function runReplyCheck(page) {
+export async function runReplyCheck(page, signal = null) {
   if (!(await isSessionValid(page))) {
     throw new Error('Session invalid or restricted. Aborting reply check.');
   }
 
   logger.info('Starting reply check...');
+  let threadsProcessed = 0;
   
   try {
     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
-    await randomDelay(5000, 10000);
+    await randomDelay(5000, 10000, signal);
 
     // Heuristic: finding unread message list items
     const unreadThreads = await page.$$('.msg-conversation-listitem--unread');
     
     logger.info(`Found ${unreadThreads.length} unread threads.`);
-    let threadsProcessed = 0;
 
     for (const thread of unreadThreads) {
-      if (RuntimeStateService.shouldStop('reply_check')) {
+      if (RuntimeStateService.shouldStop('reply_check') || signal?.aborted) {
         logger.info('Reply check interrupted by system signal');
         break;
       }
-      await thread.click();
-      await randomDelay(2000, 4000);
+      await humanClick(thread, signal);
+      await randomDelay(2000, 4000, signal);
 
       // Extract details
       const profileLink = await page.$('.msg-thread__link-to-profile');
@@ -79,6 +80,10 @@ export async function runReplyCheck(page) {
     logger.info('Reply check complete.');
     return { recordsProcessed: threadsProcessed };
   } catch (error) {
+    if (error instanceof EmergencyStopError || error.message.includes('EmergencyStopError') || error.message.includes('aborted')) {
+      logger.info('Reply check workflow aborted gracefully due to emergency stop or timeout.');
+      return { recordsProcessed: threadsProcessed };
+    }
     logger.error('Error during reply check', { error: error.message });
     throw error;
   }
