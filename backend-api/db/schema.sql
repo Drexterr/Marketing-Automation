@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS connections (
     state TEXT,
     data TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_connections_state ON connections(state);
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 CREATE TABLE IF NOT EXISTS scheduler_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name TEXT,
     start_time TIMESTAMP,
     end_time TIMESTAMP,
     status TEXT, -- 'running', 'completed', 'failed'

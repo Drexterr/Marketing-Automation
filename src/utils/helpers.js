@@ -90,12 +90,41 @@ export async function appendReviewQueue(entry) {
   });
 }
 
+export async function takeScreenshotOnFailure(page, operationName) {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const screenshotDir = path.join(process.cwd(), 'logs', 'screenshots');
+    const htmlDir = path.join(process.cwd(), 'logs', 'snapshots');
+    
+    await fsPromises.mkdir(screenshotDir, { recursive: true });
+    await fsPromises.mkdir(htmlDir, { recursive: true });
+
+    const screenshotPath = path.join(screenshotDir, `${operationName}-${timestamp}.png`);
+    const htmlPath = path.join(htmlDir, `${operationName}-${timestamp}.html`);
+
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    const html = await page.content();
+    await fsPromises.writeFile(htmlPath, html, 'utf8');
+
+    logger.error(`Diagnostic capture: ${operationName}`, { screenshotPath, htmlPath });
+  } catch (e) {
+    logger.error('Failed to capture diagnostics', { error: e.message });
+  }
+}
+
 export async function isSessionValid(page) {
   try {
+    const currentUrl = page.url();
+    if (currentUrl.includes('linkedin.com/checkpoint/challenge')) {
+      logger.security('Security checkpoint detected!', { url: currentUrl });
+      RuntimeStateService.emergencyStop();
+      return false;
+    }
+
     const isLogin = await page.$('input[name="session_key"]');
     const isCaptcha = await page.$('#captcha-internal'); // Common ID for LinkedIn CAPTCHA
     const bodyText = await page.evaluate(() => document.body.innerText);
-    const hasRestrictedMsg = bodyText.includes('Your account has been restricted');
+    const hasRestrictedMsg = bodyText.includes('Your account has been restricted') || bodyText.includes('Temporarily Restricted');
     
     if (isLogin || isCaptcha || hasRestrictedMsg) {
       let reason = 'unknown';
@@ -113,80 +142,37 @@ export async function isSessionValid(page) {
       return false;
     }
     return true;
-  } catch {
+  } catch (e) {
+    logger.warn('Error during session validation', { error: e.message });
     return false;
   }
 }
 
-export async function logSessionSummary(summary) {
-  const logFile = path.join(process.cwd(), 'logs', 'session-summary.ndjson');
-  const dir = path.dirname(logFile);
-  await fsPromises.mkdir(dir, { recursive: true });
-  
-  const line = JSON.stringify({
-    ...summary,
-    timestamp: new Date().toISOString()
-  }) + '\n';
-  
-  await fsPromises.appendFile(logFile, line);
-}
-
-/**
- * Updated to use ConnectionRepository
- */
-export function checkWeeklyLimit(filePath, limit) {
-  const count = connectionRepo.countSentInLast7Days();
-  return count < limit;
-}
-
-/**
- * Generic loader for feed data
- */
-export function loadFeedData(filePath) {
-  try {
-    return fs.readFileSync(filePath, 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map(line => JSON.parse(line));
-  } catch {
-    return [];
+export async function checkAuthMidWorkflow(page, operationName) {
+  const isValid = await isSessionValid(page);
+  if (!isValid) {
+    await takeScreenshotOnFailure(page, `AUTH_LOST_${operationName}`);
+    throw new EmergencyStopError(`Session lost during ${operationName}`);
   }
 }
 
 /**
- * Generic append for feed system
+ * Robust selector finder with multiple candidates and automatic diagnostics
  */
-export const appendAction = async (filePath, entry) => {
-  if (filePath.includes('connections-sent')) {
-     const { url, status, lastAction, ...data } = entry;
-     return connectionRepo.upsert(url, status || 'sent', lastAction || 'connect', data);
+export async function safeWaitForSelector(page, selectors, timeout = 10000, operationName = 'generic') {
+  const selectorList = Array.isArray(selectors) ? selectors : [selectors];
+  
+  for (const selector of selectorList) {
+    try {
+      const el = await page.waitForSelector(selector, { timeout: timeout / selectorList.length });
+      if (el) return el;
+    } catch (e) {
+      // try next
+    }
   }
-
-  const dir = path.dirname(filePath);
-  await fsPromises.mkdir(dir, { recursive: true });
-
-  const line = JSON.stringify({
-    ...entry,
-    timestamp: new Date().toISOString()
-  }) + '\n';
-
-  await fsPromises.appendFile(filePath, line);
-};
-
-export function withTimeout(promise, ms, operationName, controller = null) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      if (controller) {
-        controller.abort();
-      }
-      reject(new Error(`Timeout exceeded: ${operationName} took longer than ${ms}ms`));
-    }, ms);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    clearTimeout(timeoutId);
-  });
+  
+  await takeScreenshotOnFailure(page, `SELECTOR_FAILURE_${operationName}`);
+  throw new Error(`Failed to find any selectors for ${operationName}: ${selectorList.join(', ')}`);
 }
 
 // ─── Human-like interaction helpers ──────────────────────────────────────────
@@ -209,6 +195,7 @@ export async function humanType(element, text, signal = null) {
 
 export async function humanClick(element, signal = null) {
   if (signal?.aborted) throw new Error('Task aborted by timeout');
+  if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted click');
   await element.hover();
   await new Promise(r => setTimeout(r, randomBetween(200, 500)));
   await element.click();
@@ -216,6 +203,7 @@ export async function humanClick(element, signal = null) {
 
 export async function humanScroll(page, signal = null) {
   if (signal?.aborted) throw new Error('Task aborted by timeout');
+  if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted scroll');
   const amount = randomBetween(300, 900);
   await page.evaluate((px) => window.scrollBy(0, px), amount);
   await randomDelay(1000, 3000, signal);
@@ -227,7 +215,13 @@ export const randomDelay = async (min = 8000, max = 25000, signal = null) => {
   while (Date.now() - start < target) {
     if (signal?.aborted) throw new Error('Task aborted by timeout');
     if (RuntimeStateService.getFlag('emergency_stop')) throw new EmergencyStopError('Emergency stop interrupted delay');
-    await new Promise(r => setTimeout(r, Math.min(1000, target - (Date.now() - start))));
+    
+    // Pulse the pulse
+    const elapsed = Date.now() - start;
+    const progress = Math.min(100, Math.floor((elapsed / target) * 100));
+    RuntimeStateService.updatePulse({ progress });
+
+    await new Promise(r => setTimeout(r, 1000));
   }
 };
 

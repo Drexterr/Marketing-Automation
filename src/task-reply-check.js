@@ -15,7 +15,7 @@ export async function runReplyCheck(page, signal = null) {
   let threadsProcessed = 0;
   
   try {
-    await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
+    await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
     await randomDelay(5000, 10000, signal);
 
     // Heuristic: finding unread message list items

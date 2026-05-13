@@ -10,7 +10,14 @@ const connectionRepo = new ConnectionRepository();
 export async function runReplyResponse(page, signal = null) {
   const connections = connectionRepo.findAllConnections();
   // Only respond to those who replied and we haven't sent an AI response yet
-  const toRespond = connections.filter(c => c.state === 'replied' && !c.aiResponseSent);
+  const toRespond = connections.filter(c => {
+    if (c.state === 'conversation_active' || c.aiResponseSent) return false;
+    if (c.state === 'sending_reply') {
+      const draftedAt = new Date(c.aiResponseDraftedAt || c.updated_at).getTime();
+      if (Date.now() - draftedAt < 30 * 60 * 1000) return false; // Currently in progress
+    }
+    return c.state === 'replied' || c.state === 'sending_reply';
+  });
   
   if (toRespond.length === 0) {
     logger.info('No new replies needing AI response.');
@@ -32,7 +39,7 @@ export async function runReplyResponse(page, signal = null) {
         continue;
       }
 
-      await page.goto(profile.conversationUrl, { waitUntil: 'networkidle' });
+      await page.goto(profile.conversationUrl, { waitUntil: 'domcontentloaded' });
       await randomDelay(5000, 8000, signal);
 
       // Extract last message text to feed to Claude
@@ -44,6 +51,19 @@ export async function runReplyResponse(page, signal = null) {
       
       const lastMessageText = await messages[messages.length - 1].innerText();
       logger.info(`Last message from ${profile.name || profile.profile_url}: "${lastMessageText.substring(0, 50)}..."`);
+
+      if (profile.state === 'sending_reply' && profile.pendingAiResponse) {
+         if (lastMessageText.includes(profile.pendingAiResponse.substring(0, 20))) {
+             logger.info(`Detected already sent reply for ${profile.profile_url}. Recovering state.`);
+             connectionRepo.upsert(profile.profile_url, 'conversation_active', {
+                aiResponseSent: true,
+                lastAiResponse: profile.pendingAiResponse,
+                lastAiResponseAt: new Date().toISOString(),
+                pendingAiResponse: null
+             });
+             continue;
+         }
+      }
 
       const aiResponse = await generateReplyResponse(profile, lastMessageText);
 
@@ -63,6 +83,11 @@ export async function runReplyResponse(page, signal = null) {
       } else {
         const editor = await page.$('.msg-form__contenteditable[role="textbox"]');
         if (editor) {
+          connectionRepo.upsert(profile.profile_url, 'sending_reply', {
+              pendingAiResponse: aiResponse,
+              aiResponseDraftedAt: new Date().toISOString()
+          });
+
           await humanClick(editor, signal);
           await humanType(editor, aiResponse, signal);
           await randomDelay(2000, 4000, signal);
@@ -74,7 +99,8 @@ export async function runReplyResponse(page, signal = null) {
             connectionRepo.upsert(profile.profile_url, 'conversation_active', {
               aiResponseSent: true,
               lastAiResponse: aiResponse,
-              lastAiResponseAt: new Date().toISOString()
+              lastAiResponseAt: new Date().toISOString(),
+              pendingAiResponse: null
             });
             logger.info(`Successfully sent AI response to ${profile.name || profile.profile_url}`);
             responsesSent++;

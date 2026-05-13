@@ -17,7 +17,14 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="loginContainer" style="display: none; max-width: 400px;">
+        <h1>Login</h1>
+        <input type="password" id="password" placeholder="Password" style="width: 100%; padding: 10px; margin: 10px 0;">
+        <button onclick="login()" style="width: 100%; padding: 10px; background: #3498db; color: white; border: none; cursor: pointer;">Login</button>
+        <div id="loginError" style="color: red; margin-top: 10px;"></div>
+    </div>
+
+    <div class="container" id="dashboardContainer" style="display: none;">
         <h1>CUE AI Outreach Performance</h1>
         <div class="stats-grid">
             <div class="stat-card">
@@ -45,8 +52,16 @@
     <script>
         async function loadStats() {
             const response = await fetch('/api/stats');
+            if (response.status === 401) {
+                document.getElementById('loginContainer').style.display = 'block';
+                document.getElementById('dashboardContainer').style.display = 'none';
+                return;
+            }
             const data = await response.json();
             
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('dashboardContainer').style.display = 'block';
+
             document.getElementById('totalSent').textContent = data.totalSent;
             document.getElementById('accepted').textContent = data.accepted;
             document.getElementById('replied').textContent = data.replied;

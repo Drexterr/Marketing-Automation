@@ -9,7 +9,7 @@ const connectionRepo = new ConnectionRepository();
 export async function checkAcceptedConnections(page, signal = null) {
   logger.info('Checking for newly accepted connections with pagination...');
   try {
-    await page.goto('https://www.linkedin.com/mynetwork/invite-connect/connections/', { waitUntil: 'networkidle' });
+    await page.goto('https://www.linkedin.com/mynetwork/invite-connect/connections/', { waitUntil: 'domcontentloaded' });
     await randomDelay(3000, 6000, signal);
 
     const processedUrls = new Set();
@@ -123,7 +123,7 @@ export async function runFirstMessageWorkflow(page, signal = null) {
 
         logger.info(`Sending message to ${target.name || target.profile_url}`);
 
-        await page.goto(target.profile_url, { waitUntil: 'networkidle' });
+        await page.goto(target.profile_url, { waitUntil: 'domcontentloaded' });
         await randomDelay(4000, 8000, signal);
 
         let messageButton = await page.$('button.pvs-profile-actions__action:has-text("Message"), a.pvs-profile-actions__action:has-text("Message")');
@@ -135,6 +135,18 @@ export async function runFirstMessageWorkflow(page, signal = null) {
 
         await humanClick(messageButton, signal);
         await randomDelay(2000, 4000, signal);
+
+        const existingMessages = await page.$$('.msg-s-event-listitem');
+        if (existingMessages.length > 0) {
+            logger.info(`Conversation history already exists for ${target.name || target.profile_url}. Skipping first message to prevent duplicate.`);
+            connectionRepo.upsert(target.profile_url, 'first_message_sent', {
+              firstMessageSentAt: new Date().toISOString(),
+              followUpSent: false
+            });
+            const closeBtn = await page.$('button.msg-overlay-bubble-header__control--close-btn');
+            if (closeBtn) await humanClick(closeBtn, signal);
+            continue;
+        }
 
         const editor = await page.$('div.msg-form__contenteditable');
         if (editor) {

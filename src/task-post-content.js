@@ -36,7 +36,7 @@ export async function runPostContent(page, signal = null) {
   let posted = false;
 
   try {
-    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'networkidle' });
+    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
     await randomDelay(5000, 8000, signal);
 
     const startPostButton = await page.$('.share-box-feed-entry__trigger');

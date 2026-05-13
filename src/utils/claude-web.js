@@ -73,7 +73,7 @@ export async function closeWebClient() {
 
 // Close cleanly on process exit
 process.on('exit', () => { if (_client) _client.close(); });
-process.on('SIGINT', async () => { await closeWebClient(); process.exit(0); });
+// Removed competing SIGINT handler
 
 // ─── ClaudeWebClient ──────────────────────────────────────────────────────────
 export class ClaudeWebClient {

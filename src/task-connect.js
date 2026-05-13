@@ -11,7 +11,7 @@ export async function searchAndExtractProfiles(page, keyword) {
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}&origin=CLUSTER_EXPANSION`;
   
   try {
-    await page.goto(searchUrl, { waitUntil: 'networkidle' });
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.reusable-search__result-container', { timeout: 15000 });
 
     await page.evaluate(async () => {
@@ -52,7 +52,7 @@ export async function searchAndExtractProfiles(page, keyword) {
 async function scrapeProfileDetails(page, profile, signal = null) {
   logger.info(`Deep scraping profile: ${profile.name}`);
   try {
-    await page.goto(profile.url, { waitUntil: 'networkidle' });
+    await page.goto(profile.url, { waitUntil: 'domcontentloaded' });
     await randomDelay(5000, 10000, signal);
 
     const details = await page.evaluate(() => {
@@ -221,7 +221,7 @@ async function sendConnectionRequest(page, profile, score, note, keyword, signal
   let failureReason = null;
 
   try {
-    await page.goto(profile.url, { waitUntil: 'networkidle' });
+    await page.goto(profile.url, { waitUntil: 'domcontentloaded' });
     await randomDelay(5000, 8000, signal);
 
     let connectButton = await page.$('button.pvs-profile-actions__action:has-text("Connect")');

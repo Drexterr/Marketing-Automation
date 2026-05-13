@@ -35,6 +35,12 @@ async function shutdown() {
     }
   }
 
+  try {
+    await closeWebClient();
+  } catch (e) {
+    logger.error('Error closing Claude client', { error: e.message });
+  }
+
   const lockFile = path.join(process.cwd(), 'data', 'scheduler.lock');
   if (fs.existsSync(lockFile)) {
     try {
@@ -43,6 +49,15 @@ async function shutdown() {
     } catch (e) {
       // ignore
     }
+  }
+
+  try {
+    if (db && db.open) {
+      db.close();
+      logger.info('Database connection closed.');
+    }
+  } catch (e) {
+    logger.error('Error closing database', { error: e.message });
   }
 
   logger.info('Shutdown complete.');

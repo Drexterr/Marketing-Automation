@@ -13,14 +13,21 @@ export class ConnectionRepository extends SqliteRepository {
         const now = new Date().toISOString();
         const dataStr = JSON.stringify(data || {});
 
+        const isSent = state === 'request_sent';
+        const sentAtValue = isSent ? now : null;
+
         this.db.prepare(`
-            INSERT INTO connections (profile_url, state, data, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO connections (profile_url, state, data, created_at, updated_at, sent_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(profile_url) DO UPDATE SET
                 state = COALESCE(excluded.state, connections.state),
                 data = json_patch(connections.data, excluded.data),
-                updated_at = excluded.updated_at
-        `).run(profileUrl, state, dataStr, now, now);
+                updated_at = excluded.updated_at,
+                sent_at = CASE 
+                    WHEN connections.sent_at IS NULL AND excluded.state = 'request_sent' THEN excluded.updated_at 
+                    ELSE connections.sent_at 
+                END
+        `).run(profileUrl, state, dataStr, now, now, sentAtValue);
 
         return this.findByProfileUrl(profileUrl);
     }
@@ -29,7 +36,7 @@ export class ConnectionRepository extends SqliteRepository {
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE state = 'request_sent' AND updated_at > ?
+            WHERE sent_at > ?
         `).get(oneWeekAgo).count;
     }
 
@@ -39,7 +46,7 @@ export class ConnectionRepository extends SqliteRepository {
         const startOfDayIso = startOfDay.toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE state IN ('request_sent', 'connected', 'sending_first_message', 'first_message_sent', 'replied', 'conversation_active', 'interested', 'followup_eligible') AND updated_at > ?
+            WHERE sent_at > ?
         `).get(startOfDayIso).count;
     }
 

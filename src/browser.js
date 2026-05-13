@@ -37,55 +37,74 @@ export class BrowserManager {
   }
 
   async launch(headless = true) {
-    logger.info(`Launching browser (headless: ${headless})`);
-    this.browser = await chromium.launch({
-      headless,
-      args: ['--disable-blink-features=AutomationControlled']
-    });
-    activeBrowsers.add(this);
+    try {
+      logger.info(`Launching browser (headless: ${headless})`);
+      this.browser = await chromium.launch({
+        headless,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage' // Prevent crashes in low-memory/container environments
+        ],
+        timeout: 60000 // Increase launch timeout
+      });
+      activeBrowsers.add(this);
 
-    const PROFILES = [
-      { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1280, height: 800 } },
-      { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', viewport: { width: 1366, height: 768 } },
-      { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1440, height: 900 } },
-      { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1512, height: 982 } },
-    ];
-    const profile = PROFILES[Math.floor(Math.random() * PROFILES.length)];
-    logger.info(`Browser profile: ${profile.viewport.width}x${profile.viewport.height}`);
+      const PROFILES = [
+        { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1280, height: 800 } },
+        { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', viewport: { width: 1366, height: 768 } },
+        { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1440, height: 900 } },
+        { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', viewport: { width: 1512, height: 982 } },
+      ];
+      const profile = PROFILES[Math.floor(Math.random() * PROFILES.length)];
+      logger.info(`Browser profile: ${profile.viewport.width}x${profile.viewport.height}`);
 
-    const options = {
-      userAgent: profile.userAgent,
-      viewport: profile.viewport
-    };
+      const options = {
+        userAgent: profile.userAgent,
+        viewport: profile.viewport,
+        ignoreHTTPSErrors: true
+      };
 
-    if (fs.existsSync(this.sessionPath)) {
-      logger.info('Loading existing session');
-      try {
-        const content = fs.readFileSync(this.sessionPath, 'utf8');
-        const parsed = JSON.parse(content);
-        if (parsed.iv && parsed.encrypted && parsed.authTag) {
-          options.storageState = JSON.parse(decryptSession(content));
-        } else {
-          options.storageState = parsed; // Legacy unencrypted
+      if (fs.existsSync(this.sessionPath)) {
+        logger.info('Loading existing session');
+        try {
+          const content = fs.readFileSync(this.sessionPath, 'utf8');
+          const parsed = JSON.parse(content);
+          if (parsed.iv && parsed.encrypted && parsed.authTag) {
+            options.storageState = JSON.parse(decryptSession(content));
+          } else {
+            options.storageState = parsed; // Legacy unencrypted
+          }
+        } catch (e) {
+          logger.warn('Failed to parse or decrypt session.json', { error: e.message });
         }
-      } catch (e) {
-        logger.warn('Failed to parse or decrypt session.json', { error: e.message });
       }
+
+      this.context = await this.browser.newContext(options);
+      
+      // Global timeouts to prevent infinite hangs
+      this.context.setDefaultTimeout(30000);
+      this.context.setDefaultNavigationTimeout(45000);
+
+      this.page = await this.context.newPage();
+
+      // Inject stealth scripts
+      await this.page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+      });
+
+      return this.page;
+    } catch (error) {
+      logger.error('Failed to launch browser', { error: error.message });
+      if (this.browser) await this.browser.close();
+      throw error;
     }
-
-    this.context = await this.browser.newContext(options);
-    this.page = await this.context.newPage();
-
-    // Inject stealth scripts
-    await this.page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      window.chrome = { runtime: {} };
-    });
-
-    return this.page;
   }
 
   async saveSession() {
+    if (!this.context) return;
     logger.info('Saving encrypted session state');
     fs.mkdirSync(path.dirname(this.sessionPath), { recursive: true });
     const state = await this.context.storageState();
@@ -98,9 +117,15 @@ export class BrowserManager {
     if (!this.page) return false;
     try {
       logger.info('Checking session validity...');
-      await this.page.goto('https://www.linkedin.com/feed/', { timeout: 10000 });
-      await this.page.waitForSelector('#global-nav', { timeout: 5000 });
-      return true;
+      // Use domcontentloaded for faster check
+      await this.page.goto('https://www.linkedin.com/feed/', { timeout: 15000, waitUntil: 'domcontentloaded' });
+      const nav = await this.page.$('#global-nav');
+      if (nav) return true;
+      
+      const loginBtn = await this.page.$('button:has-text("Sign in")');
+      if (loginBtn) return false;
+
+      return false;
     } catch (err) {
       logger.warn('Session check failed', { message: err.message });
       return false;
@@ -108,7 +133,17 @@ export class BrowserManager {
   }
 
   async close() {
-    if (this.browser) await this.browser.close();
-    activeBrowsers.delete(this);
+    try {
+      if (this.page) await this.page.close().catch(() => {});
+      if (this.context) await this.context.close().catch(() => {});
+      if (this.browser) await this.browser.close().catch(() => {});
+    } catch (e) {
+      logger.error('Error during browser cleanup', { error: e.message });
+    } finally {
+      activeBrowsers.delete(this);
+      this.page = null;
+      this.context = null;
+      this.browser = null;
+    }
   }
 }

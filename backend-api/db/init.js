@@ -11,6 +11,7 @@ if (!fs.existsSync(path.dirname(dbPath))) {
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
 const schema = fs.readFileSync(schemaPath, 'utf8');
 db.exec(schema);
