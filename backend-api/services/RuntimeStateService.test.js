@@ -1,10 +1,18 @@
 import { RuntimeStateService } from './RuntimeStateService.js';
 import { RuntimeStateRepository } from '../../shared/repositories/RuntimeStateRepository.js';
 import assert from 'node:assert';
-import test from 'node:test';
+import test, { describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 
 const repo = new RuntimeStateRepository();
+
+describe('Unified State Machine', () => {
+  it('prevents invalid state transitions', () => {
+    // Reset state first
+    repo.set('workflow_state', 'IDLE');
+    assert.throws(() => RuntimeStateService.setWorkflowState('PAUSED'), /Invalid transition/);
+  });
+});
 
 test('RuntimeStateService handles pulse data', () => {
     // Force immediate write via 0% progress to ensure it's written regardless of throttle

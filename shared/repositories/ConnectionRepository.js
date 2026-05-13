@@ -9,19 +9,18 @@ export class ConnectionRepository extends SqliteRepository {
         return this.db.prepare(`SELECT * FROM connections WHERE profile_url = ?`).get(profileUrl);
     }
 
-    upsert(profileUrl, status, lastAction, data) {
+    upsert(profileUrl, state, data) {
         const now = new Date().toISOString();
         const dataStr = JSON.stringify(data || {});
 
         this.db.prepare(`
-            INSERT INTO connections (profile_url, status, last_action, data, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO connections (profile_url, state, data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(profile_url) DO UPDATE SET
-                status = COALESCE(excluded.status, connections.status),
-                last_action = COALESCE(excluded.last_action, connections.last_action),
+                state = COALESCE(excluded.state, connections.state),
                 data = json_patch(connections.data, excluded.data),
                 updated_at = excluded.updated_at
-        `).run(profileUrl, status, lastAction, dataStr, now, now);
+        `).run(profileUrl, state, dataStr, now, now);
 
         return this.findByProfileUrl(profileUrl);
     }
@@ -30,7 +29,7 @@ export class ConnectionRepository extends SqliteRepository {
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE status = 'sent' AND updated_at > ?
+            WHERE state = 'request_sent' AND updated_at > ?
         `).get(oneWeekAgo).count;
     }
 
@@ -40,7 +39,7 @@ export class ConnectionRepository extends SqliteRepository {
         const startOfDayIso = startOfDay.toISOString();
         return this.db.prepare(`
             SELECT COUNT(*) as count FROM connections 
-            WHERE (status = 'sent' OR status = 'accepted') AND updated_at > ?
+            WHERE state IN ('request_sent', 'connected', 'sending_first_message', 'first_message_sent', 'replied', 'conversation_active', 'interested', 'followup_eligible') AND updated_at > ?
         `).get(startOfDayIso).count;
     }
 
@@ -50,8 +49,7 @@ export class ConnectionRepository extends SqliteRepository {
             ...JSON.parse(r.data || '{}'),
             id: r.id,
             profile_url: r.profile_url,
-            status: r.status,
-            last_action: r.last_action,
+            state: r.state,
             updated_at: r.updated_at
         }));
     }

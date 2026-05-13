@@ -1,16 +1,38 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import logger from './utils/logger.js';
 
 export const activeBrowsers = new Set();
+
+function encryptSession(text) {
+  const password = process.env.SESSION_SECRET || process.env.DASHBOARD_PASSWORD || 'fallback_secret';
+  const key = crypto.scryptSync(password, 'salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  return JSON.stringify({ iv: iv.toString('hex'), encrypted, authTag });
+}
+
+function decryptSession(jsonStr) {
+  const { iv, encrypted, authTag } = JSON.parse(jsonStr);
+  const password = process.env.SESSION_SECRET || process.env.DASHBOARD_PASSWORD || 'fallback_secret';
+  const key = crypto.scryptSync(password, 'salt', 32);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
 
 export class BrowserManager {
   constructor() {
     this.browser = null;
     this.context = null;
     this.page = null;
-    // Fix 5: Correct session path resolution
     this.sessionPath = path.join(process.cwd(), 'data', 'session.json');
   }
 
@@ -38,13 +60,23 @@ export class BrowserManager {
 
     if (fs.existsSync(this.sessionPath)) {
       logger.info('Loading existing session');
-      options.storageState = this.sessionPath;
+      try {
+        const content = fs.readFileSync(this.sessionPath, 'utf8');
+        const parsed = JSON.parse(content);
+        if (parsed.iv && parsed.encrypted && parsed.authTag) {
+          options.storageState = JSON.parse(decryptSession(content));
+        } else {
+          options.storageState = parsed; // Legacy unencrypted
+        }
+      } catch (e) {
+        logger.warn('Failed to parse or decrypt session.json', { error: e.message });
+      }
     }
 
     this.context = await this.browser.newContext(options);
     this.page = await this.context.newPage();
 
-    // Fix 2: Inject stealth scripts
+    // Inject stealth scripts
     await this.page.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
       window.chrome = { runtime: {} };
@@ -53,11 +85,12 @@ export class BrowserManager {
     return this.page;
   }
 
-  // Fix 1: Ensure directory exists before saving
   async saveSession() {
-    logger.info('Saving session state');
+    logger.info('Saving encrypted session state');
     fs.mkdirSync(path.dirname(this.sessionPath), { recursive: true });
-    await this.context.storageState({ path: this.sessionPath });
+    const state = await this.context.storageState();
+    const encrypted = encryptSession(JSON.stringify(state));
+    fs.writeFileSync(this.sessionPath, encrypted, 'utf8');
   }
 
   // Enhancement B: Session validity check

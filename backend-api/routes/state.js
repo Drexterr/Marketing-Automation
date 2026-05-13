@@ -6,7 +6,20 @@ const router = express.Router();
 const activityRepo = new ActivityRepository();
 
 router.get('/', (req, res) => {
-  res.json(RuntimeStateService.getAllFlags());
+  const flags = RuntimeStateService.getAllFlags();
+  const pulse = RuntimeStateService.getPulse();
+  const systemState = flags.system_state || {};
+
+  res.json({
+    ...flags,
+    pulse,
+    lastRun: systemState.lastSuccessfulRun,
+    nextRun: systemState.nextScheduledRun
+  });
+});
+
+router.get('/health', (req, res) => {
+  res.json(RuntimeStateService.getSystemHealth());
 });
 
 router.post('/toggle/:module', async (req, res) => {

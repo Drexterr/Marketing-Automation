@@ -25,4 +25,9 @@ test('ReviewQueueRepository', async (t) => {
         assert.equal(updated.status, 'approved');
         assert.equal(updated.response, 'Hello world');
     });
+
+    await t.test('requires operatorNotes when resolving', () => {
+        const repo = new ReviewQueueRepository();
+        assert.throws(() => repo.resolve('some_id', null, 'response'), /operatorNotes required/);
+    });
 });

@@ -18,4 +18,8 @@ export class ActivityRepository extends SqliteRepository {
             `SELECT * FROM activity_log ORDER BY id DESC LIMIT ?`
         ).all(limit);
     }
+
+    cleanupOldLogs(days) {
+        this.db.prepare(`DELETE FROM activity_log WHERE timestamp < datetime('now', '-' || ? || ' days')`).run(days);
+    }
 }

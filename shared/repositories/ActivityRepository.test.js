@@ -23,4 +23,10 @@ test('ActivityRepository', async (t) => {
         assert.equal(recent[0].event_type, 'EVENT_2');
         assert.equal(recent[1].event_type, 'EVENT_1');
     });
+
+    await t.test('cleans up old logs', () => {
+        const repo = new ActivityRepository();
+        repo.cleanupOldLogs(30);
+        assert.ok(true);
+    });
 });

@@ -14,15 +14,6 @@ const schedulerRunsRepo = new SqliteRepository('scheduler_runs');
 
 export const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
-/**
- * Updated to use ConnectionRepository
- */
-export const appendConnection = async (filePath, entry) => {
-  // We ignore filePath as we use SQLite now, but keep signature for compatibility
-  const { url, status, lastAction, ...data } = entry;
-  connectionRepo.upsert(url, status || 'sent', lastAction || 'connect', data);
-};
-
 export async function getSystemState() {
   const state = RuntimeStateService.getFlag('system_state') || {};
   if (!state.firstRunDate) {
@@ -143,40 +134,6 @@ export async function logSessionSummary(summary) {
 /**
  * Updated to use ConnectionRepository
  */
-export async function updateConnectionRecord(filePath, url, updates) {
-  const status = updates.status || null;
-  const lastAction = updates.lastAction || null;
-  
-  const newData = { ...updates };
-  delete newData.status;
-  delete newData.lastAction;
-  delete newData.url;
-
-  connectionRepo.upsert(url, status, lastAction, newData);
-}
-
-/**
- * Updated to use ConnectionRepository
- */
-export function loadConnections(filePath) {
-  // If it's a feed file, we might still want to use the file-based loader
-  if (filePath && (filePath.includes('feed') || filePath.includes('actions'))) {
-    try {
-      return fs.readFileSync(filePath, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map(line => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-  
-  return connectionRepo.findAllConnections();
-}
-
-/**
- * Updated to use ConnectionRepository
- */
 export function checkWeeklyLimit(filePath, limit) {
   const count = connectionRepo.countSentInLast7Days();
   return count < limit;
@@ -201,7 +158,8 @@ export function loadFeedData(filePath) {
  */
 export const appendAction = async (filePath, entry) => {
   if (filePath.includes('connections-sent')) {
-    return appendConnection(filePath, entry);
+     const { url, status, lastAction, ...data } = entry;
+     return connectionRepo.upsert(url, status || 'sent', lastAction || 'connect', data);
   }
 
   const dir = path.dirname(filePath);

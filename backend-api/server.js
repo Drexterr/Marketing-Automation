@@ -9,6 +9,9 @@ import runtimeRoutes from './routes/runtime.js';
 import reviewQueueRoutes from './routes/review-queue.js';
 import { authMiddleware } from './middleware/auth.js';
 import { securityMiddleware } from './middleware/security.js';
+import { testClaudeConnection } from '../src/claude-service.js';
+
+testClaudeConnection().then(res => console.log('Claude Health:', res));
 
 export function createServer() {
   const app = express();

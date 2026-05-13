@@ -14,17 +14,42 @@ import logger from './utils/logger.js';
 import { callCLI, testCLI } from './utils/claude-cli.js';
 import { getWebClient, closeWebClient } from './utils/claude-web.js';
 import { sanitizePromptInput } from './utils/sanitizer.js';
+import { getSystemState, updateSystemState } from './utils/helpers.js';
 
 const MODE = (process.env.CLAUDE_MODE || 'cli').toLowerCase(); // 'cli' | 'web'
+
+let consecutiveFailures = 0;
 
 // ─── Core dispatcher ──────────────────────────────────────────────────────────
 
 async function callClaude(prompt) {
-  if (MODE === 'web') {
-    const client = await getWebClient();
-    return client.ask(prompt);
+  try {
+    let result;
+    if (MODE === 'web') {
+      const client = await getWebClient();
+      result = await client.ask(prompt);
+    } else {
+      result = await callCLI(prompt);
+    }
+    
+    // Reset on success
+    if (consecutiveFailures > 0) {
+      consecutiveFailures = 0;
+      await updateSystemState({ degradedMode: false });
+    }
+    
+    return result;
+  } catch (error) {
+    consecutiveFailures++;
+    logger.error(`Claude call failed (attempt ${consecutiveFailures})`, { error: error.message });
+    
+    if (consecutiveFailures === 5) {
+      logger.error('CRITICAL: AI service has become degraded after 5 consecutive failures');
+      await updateSystemState({ degradedMode: true });
+    }
+    
+    throw error;
   }
-  return callCLI(prompt);
 }
 
 // Strip markdown code fences from JSON responses
@@ -79,10 +104,10 @@ export async function testClaudeConnection() {
       ? await (async () => { const c = await getWebClient(); return c.ask('Reply with exactly: connection successful'); })()
       : await testCLI();
     logger.info(`Claude connection OK: "${result.slice(0, 60)}"`);
-    return result;
+    return { status: 'HEALTHY' };
   } catch (error) {
     logger.error('Claude connection test failed', { message: error.message });
-    throw error;
+    return { status: 'ERROR', error: error.message };
   }
 }
 

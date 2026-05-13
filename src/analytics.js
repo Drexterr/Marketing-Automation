@@ -1,11 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'path';
 import logger from './utils/logger.js';
-import { loadConnections } from './utils/helpers.js';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
+
+const connectionRepo = new ConnectionRepository();
 
 export async function generateDashboardSummary(signal = null) {
   if (signal?.aborted) return { recordsProcessed: 0 };
-  const records = loadConnections('connections');
+  const records = connectionRepo.findAllConnections();
   
   const metrics = {
     connectionsSent: 0,
@@ -19,22 +21,23 @@ export async function generateDashboardSummary(signal = null) {
     byKeyword: {}
   };
 
-  const activeStages = ['connected', 'first_message_sent', 'replied', 'followup_eligible', 'interested'];
+  const activeStates = ['connected', 'sending_first_message', 'first_message_sent', 'replied', 'conversation_active', 'interested', 'followup_eligible'];
+  const sentStates = ['request_sent', ...activeStates];
 
   for (const r of records) {
-    if (r.status === 'sent') metrics.connectionsSent++;
+    if (sentStates.includes(r.state)) metrics.connectionsSent++;
     
-    if (activeStages.includes(r.stage)) {
+    if (activeStates.includes(r.state)) {
       metrics.accepted++;
     }
     
-    if (['first_message_sent', 'replied', 'followup_eligible', 'interested'].includes(r.stage)) {
+    if (['first_message_sent', 'replied', 'followup_eligible', 'interested'].includes(r.state)) {
       metrics.firstMessagesSent++;
     }
 
-    if (r.stage === 'replied' || r.stage === 'interested') {
+    if (r.state === 'replied' || r.state === 'interested') {
       metrics.replies++;
-      if (r.interestLevel === 'high' || r.stage === 'interested') metrics.highIntentReplies++;
+      if (r.interestLevel === 'high' || r.state === 'interested') metrics.highIntentReplies++;
     }
 
     // Campaign breakdown
@@ -42,9 +45,9 @@ export async function generateDashboardSummary(signal = null) {
       if (!metrics.byCampaign[r.campaign]) {
         metrics.byCampaign[r.campaign] = { sent: 0, accepted: 0, replies: 0 };
       }
-      if (r.status === 'sent') metrics.byCampaign[r.campaign].sent++;
-      if (activeStages.includes(r.stage)) metrics.byCampaign[r.campaign].accepted++;
-      if (r.stage === 'replied') metrics.byCampaign[r.campaign].replies++;
+      if (sentStates.includes(r.state)) metrics.byCampaign[r.campaign].sent++;
+      if (activeStates.includes(r.state)) metrics.byCampaign[r.campaign].accepted++;
+      if (r.state === 'replied') metrics.byCampaign[r.campaign].replies++;
     }
 
     // Keyword breakdown
@@ -52,9 +55,9 @@ export async function generateDashboardSummary(signal = null) {
       if (!metrics.byKeyword[r.sourceKeyword]) {
         metrics.byKeyword[r.sourceKeyword] = { sent: 0, accepted: 0, replies: 0 };
       }
-      if (r.status === 'sent') metrics.byKeyword[r.sourceKeyword].sent++;
-      if (activeStages.includes(r.stage)) metrics.byKeyword[r.sourceKeyword].accepted++;
-      if (r.stage === 'replied') metrics.byKeyword[r.sourceKeyword].replies++;
+      if (sentStates.includes(r.state)) metrics.byKeyword[r.sourceKeyword].sent++;
+      if (activeStates.includes(r.state)) metrics.byKeyword[r.sourceKeyword].accepted++;
+      if (r.state === 'replied') metrics.byKeyword[r.sourceKeyword].replies++;
     }
   }
 

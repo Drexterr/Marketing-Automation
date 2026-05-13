@@ -13,42 +13,28 @@ export function sanitizePromptInput(text) {
     text = String(text);
   }
 
-  // 1. Remove control characters (except newline and tab if we want to keep them, 
-  // but usually we want to strip most of them)
+  // 1. Remove dangerous control characters but preserve newlines (\n, \r) and tabs (\t)
+  // \x00-\x08, \x0B-\x0C, \x0E-\x1F, \x7F
   // eslint-disable-next-line no-control-regex
-  let sanitized = text.replace(/[\x00-\x1F\x7F]/g, '');
+  let sanitized = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
-  // 2. Strip HTML tags
-  sanitized = sanitized.replace(/<[^>]*>?/gm, '');
+  // 2. Escape XML-like tags to prevent breakout from our XML delimiters
+  // Instead of stripping them completely which destroys code examples,
+  // we escape <, >, &, ", and ' to entities
+  sanitized = sanitized.replace(/&/g, '&amp;')
+                       .replace(/</g, '&lt;')
+                       .replace(/>/g, '&gt;')
+                       .replace(/"/g, '&quot;')
+                       .replace(/'/g, '&#39;');
 
-  // 3. Neutralize common prompt injection patterns
-  const injectionPatterns = [
-    /ignore previous instructions/gi,
-    /stop following instructions/gi,
-    /follow these new instructions/gi,
-    /system prompt/gi,
-    /you are now/gi
-  ];
+  // 3. Trim excessive whitespace but preserve single newlines
+  // Replace 3 or more newlines with exactly 2 newlines
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
 
-  let hasInjection = false;
-  for (const pattern of injectionPatterns) {
-    if (pattern.test(sanitized)) {
-      sanitized = sanitized.replace(pattern, '[REDACTED]');
-      hasInjection = true;
-    }
-  }
-
-  if (hasInjection) {
-    sanitized += ' [POTENTIAL INJECTION]';
-  }
-
-  // 4. Trim excessive whitespace
-  sanitized = sanitized.replace(/\s+/g, ' ').trim();
-
-  // 5. Truncate to safe length
+  // 4. Truncate to safe length
   if (sanitized.length > 5000) {
     sanitized = sanitized.slice(0, 5000);
   }
 
-  return sanitized;
+  return sanitized.trim();
 }

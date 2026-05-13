@@ -1,7 +1,9 @@
 import logger from './utils/logger.js';
-import { isSessionValid, loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { isSessionValid, appendReviewQueue, randomDelay, humanClick, EmergencyStopError } from './utils/helpers.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
 
+const connectionRepo = new ConnectionRepository();
 const INTENT_KEYWORDS = ['pricing', 'demo', 'interested', 'tell me more', "let's talk", 'book', 'calendar', 'schedule'];
 
 export async function runReplyCheck(page, signal = null) {
@@ -58,8 +60,7 @@ export async function runReplyCheck(page, signal = null) {
         }
       }
 
-      await updateConnectionRecord(undefined, cleanUrl, {
-        stage: 'replied',
+      connectionRepo.upsert(cleanUrl, 'replied', {
         repliedAt: new Date().toISOString(),
         lastMessagePreview: lastMessageText.substring(0, 100).replace(/\n/g, ' '),
         interestLevel: interestLevel,

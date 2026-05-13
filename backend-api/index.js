@@ -10,8 +10,8 @@ async function start() {
   stateManager.setState('api', 'running');
   stateManager.setState('scheduler', 'idle'); // placeholder until scheduler is integrated
   
-  app.listen(PORT, () => {
-    console.log(`Backend API running on http://localhost:${PORT}`);
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`Backend API running on http://127.0.0.1:${PORT}`);
   });
 }
 

@@ -29,7 +29,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
     res.cookie('session_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000
     });
 
@@ -38,6 +38,19 @@ router.post('/login', authRateLimiter, async (req, res) => {
     logger.error('Login error', { error: error.message });
     res.status(500).json({ error: 'Server configuration error' });
   }
+});
+
+router.post('/logout', authRateLimiter, (req, res) => {
+  const token = req.cookies?.session_token;
+  if (token) {
+    activeTokens.delete(token);
+    res.clearCookie('session_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    });
+  }
+  res.json({ success: true });
 });
 
 export default router;

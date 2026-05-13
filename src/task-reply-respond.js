@@ -1,13 +1,16 @@
 import logger from './utils/logger.js';
-import { loadConnections, updateConnectionRecord, appendReviewQueue, randomDelay, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { appendReviewQueue, randomDelay, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
 import { sendAlert } from './utils/alerts.js';
 import { generateReplyResponse } from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
+
+const connectionRepo = new ConnectionRepository();
 
 export async function runReplyResponse(page, signal = null) {
-  const connections = loadConnections(undefined);
+  const connections = connectionRepo.findAllConnections();
   // Only respond to those who replied and we haven't sent an AI response yet
-  const toRespond = connections.filter(c => c.stage === 'replied' && !c.aiResponseSent);
+  const toRespond = connections.filter(c => c.state === 'replied' && !c.aiResponseSent);
   
   if (toRespond.length === 0) {
     logger.info('No new replies needing AI response.');
@@ -22,10 +25,10 @@ export async function runReplyResponse(page, signal = null) {
       logger.info('Reply response task interrupted by system signal');
       break;
     }
-    logger.info(`Processing response for ${profile.name}...`);
+    logger.info(`Processing response for ${profile.name || profile.profile_url}...`);
     try {
       if (!profile.conversationUrl) {
-        logger.warn(`No conversation URL for ${profile.name}, skipping.`);
+        logger.warn(`No conversation URL for ${profile.profile_url}, skipping.`);
         continue;
       }
 
@@ -35,28 +38,27 @@ export async function runReplyResponse(page, signal = null) {
       // Extract last message text to feed to Claude
       const messages = await page.$$('.msg-s-event-listitem__body');
       if (messages.length === 0) {
-        logger.warn(`Could not find messages for ${profile.name}`);
+        logger.warn(`Could not find messages for ${profile.profile_url}`);
         continue;
       }
       
       const lastMessageText = await messages[messages.length - 1].innerText();
-      logger.info(`Last message from ${profile.name}: "${lastMessageText.substring(0, 50)}..."`);
+      logger.info(`Last message from ${profile.name || profile.profile_url}: "${lastMessageText.substring(0, 50)}..."`);
 
       const aiResponse = await generateReplyResponse(profile, lastMessageText);
 
       if (aiResponse.includes('ESC_HUMAN')) {
-        logger.info(`Escalating ${profile.name} to human review.`);
-        await updateConnectionRecord(undefined, profile.url, {
-          stage: 'interested',
+        logger.info(`Escalating ${profile.profile_url} to human review.`);
+        connectionRepo.upsert(profile.profile_url, 'interested', {
           aiResponseSent: true,
           escalatedAt: new Date().toISOString()
         });
         await appendReviewQueue({
           type: 'human_escalation',
-          profile: profile.url,
+          profile: profile.profile_url,
           reason: 'AI requested human escalation for message: ' + lastMessageText.substring(0, 100)
         });
-        await sendAlert(`🔥 *Hot Lead*! AI escalated ${profile.name} to human review: "${lastMessageText.substring(0, 50)}..."`);
+        await sendAlert(`🔥 *Hot Lead*! AI escalated ${profile.name || profile.profile_url} to human review: "${lastMessageText.substring(0, 50)}..."`);
         responsesSent++; // Counting escalation as a processed record
       } else {
         const editor = await page.$('.msg-form__contenteditable[role="textbox"]');
@@ -69,19 +71,18 @@ export async function runReplyResponse(page, signal = null) {
           if (sendButton && !(await sendButton.isDisabled())) {
             await humanClick(sendButton, signal);
             
-            await updateConnectionRecord(undefined, profile.url, {
-              stage: 'conversation_active',
+            connectionRepo.upsert(profile.profile_url, 'conversation_active', {
               aiResponseSent: true,
               lastAiResponse: aiResponse,
               lastAiResponseAt: new Date().toISOString()
             });
-            logger.info(`Successfully sent AI response to ${profile.name}`);
+            logger.info(`Successfully sent AI response to ${profile.name || profile.profile_url}`);
             responsesSent++;
           } else {
-            logger.warn(`Could not find enabled send button for ${profile.name}`);
+            logger.warn(`Could not find enabled send button for ${profile.profile_url}`);
           }
         } else {
-          logger.warn(`Could not find message editor for ${profile.name}`);
+          logger.warn(`Could not find message editor for ${profile.profile_url}`);
         }
       }
     } catch (error) {
@@ -89,7 +90,7 @@ export async function runReplyResponse(page, signal = null) {
         logger.info('Reply response workflow aborted gracefully due to emergency stop or timeout.');
         return { recordsProcessed: responsesSent };
       }
-      logger.error(`Failed to process response for ${profile.name}`, { error: error.message });
+      logger.error(`Failed to process response for ${profile.profile_url}`, { error: error.message });
     }
     await randomDelay(5000, 10000, signal);
   }

@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { ShieldAlert, Activity, Loader2 } from 'lucide-react';
+import { ShieldAlert, Activity, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { emergencyStop } from '@/lib/api';
+import { emergencyStop, useSystemState } from '@/lib/api';
 
 interface PulseHeaderProps {
   pulse: {
@@ -15,6 +15,10 @@ interface PulseHeaderProps {
 }
 
 export const PulseHeader: React.FC<PulseHeaderProps> = ({ pulse }) => {
+  const { data } = useSystemState();
+  // Ensure we safely access the health object
+  const systemHealth = data?.systemHealth || { status: 'HEALTHY' };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'ACTIVE': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
@@ -33,41 +37,54 @@ export const PulseHeader: React.FC<PulseHeaderProps> = ({ pulse }) => {
   };
 
   return (
-    <div className="bg-card/50 border border-border/50 rounded-2xl p-6 backdrop-blur-sm shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-      <div className="flex items-center gap-4">
-        <div className={`p-3 rounded-xl border ${getStatusColor(pulse.status)} shadow-inner`}>
-          {pulse.status === 'ACTIVE' ? <Loader2 className="animate-spin" size={24} /> : <Activity size={24} />}
+    <div className="flex flex-col gap-4">
+      {systemHealth.status !== 'HEALTHY' && (
+        <div className="bg-red-100 text-red-700 p-3 rounded-lg border border-red-200 flex items-center gap-2 font-bold shadow-sm">
+          <AlertTriangle size={18} />
+          System {systemHealth.status}: {systemHealth.details?.claudeDegraded ? 'AI Service Degraded' : 'Check Logs for Failures'}
         </div>
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold tracking-tight">System Pulse</h2>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(pulse.status)}`}>
-              {pulse.status}
-            </span>
+      )}
+      <div className="bg-card/50 border border-border/50 rounded-2xl p-6 backdrop-blur-sm shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className={`p-3 rounded-xl border ${getStatusColor(pulse.status)} shadow-inner`}>
+            {pulse.status === 'ACTIVE' ? <Loader2 className="animate-spin" size={24} /> : <Activity size={24} />}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5 font-medium">
-            {pulse.activeTask || 'No active task'}
-          </p>
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold tracking-tight">System Pulse</h2>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStatusColor(pulse.status)}`}>
+                {data?.workflow_state || pulse.status}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-0.5 font-medium">
+              {pulse.activeTask || 'No active task'}
+            </p>
+            {data?.system_state?.lastCompletedRun && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Last Run: {new Date(data.system_state.lastCompletedRun).toLocaleString()}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="flex-1 max-w-md w-full">
-        <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
-          <span>Task Progress</span>
-          <span>{pulse.progress || 0}%</span>
+        <div className="flex-1 max-w-md w-full">
+          <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+            <span>Task Progress</span>
+            <span>{pulse.progress || 0}%</span>
+          </div>
+          <Progress value={pulse.progress || 0} className="h-2 bg-slate-100 dark:bg-slate-800" />
         </div>
-        <Progress value={pulse.progress || 0} className="h-2 bg-slate-100 dark:bg-slate-800" />
-      </div>
 
-      <Button 
-        variant="destructive" 
-        size="sm" 
-        onClick={handleStop}
-        className="font-bold uppercase tracking-tighter gap-2 shadow-lg shadow-rose-500/20"
-      >
-        <ShieldAlert size={16} />
-        Emergency Stop
-      </Button>
+        <Button 
+          variant="destructive" 
+          size="sm" 
+          onClick={handleStop}
+          className="font-bold uppercase tracking-tighter gap-2 shadow-lg shadow-rose-500/20"
+        >
+          <ShieldAlert size={16} />
+          Emergency Stop
+        </Button>
+      </div>
     </div>
   );
 };

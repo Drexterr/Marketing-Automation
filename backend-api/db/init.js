@@ -15,4 +15,21 @@ db.pragma('journal_mode = WAL');
 const schema = fs.readFileSync(schemaPath, 'utf8');
 db.exec(schema);
 
+// Run migrations
+const migrationsDir = path.resolve('backend-api/db/migrations');
+if (fs.existsSync(migrationsDir)) {
+    const migrations = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.js')).sort();
+    for (const file of migrations) {
+        try {
+            const { up } = await import(`file://${path.join(migrationsDir, file)}`);
+            if (typeof up === 'function') {
+                console.log(`Running migration: ${file}`);
+                up(db);
+            }
+        } catch (e) {
+            console.error(`Failed to run migration: ${file}`, e);
+        }
+    }
+}
+
 export default db;

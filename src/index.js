@@ -52,11 +52,34 @@ async function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+export function validateConfig() {
+  const requiredVars = ['CLAUDE_MODE', 'FOUNDER_NAME', 'PRODUCT_NAME'];
+  const missing = requiredVars.filter(v => !process.env[v]);
+  
+  if (missing.length > 0) {
+    throw new Error(`Configuration Error: Missing required environment variables: ${missing.join(', ')}`);
+  }
+}
+
 function validateSystem() {
   try {
     if (!process.env.DASHBOARD_PASSWORD) {
       throw new Error('DASHBOARD_PASSWORD not set in .env');
     }
+    if (!process.env.SESSION_SECRET && !process.env.DASHBOARD_PASSWORD) {
+      throw new Error('SESSION_SECRET or DASHBOARD_PASSWORD must be set for session encryption');
+    }
+    
+    // Check for critical LinkedIn credentials
+    if (!process.env.LINKEDIN_EMAIL || !process.env.LINKEDIN_PASSWORD) {
+      logger.warn('LINKEDIN_EMAIL or LINKEDIN_PASSWORD not set in .env. Setup/re-login may require manual entry.');
+    }
+
+    // Check for Claude API Key if in CLI mode
+    if ((process.env.CLAUDE_MODE || 'cli').toLowerCase() === 'cli' && !process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY not set in .env (required for CLAUDE_MODE=cli)');
+    }
+
     // Pre-hash password and validate it can be hashed
     getDashboardHash();
 
@@ -70,8 +93,14 @@ function validateSystem() {
   }
 }
 
-// Validate environment
-validateSystem();
+import { fileURLToPath } from 'node:url';
+
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMainModule) {
+  validateConfig();
+  validateSystem();
+}
 
 async function setup() {
   const browserManager = new BrowserManager();

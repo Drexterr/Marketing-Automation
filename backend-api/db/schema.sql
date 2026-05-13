@@ -8,14 +8,13 @@ CREATE TABLE IF NOT EXISTS runtime_state (
 CREATE TABLE IF NOT EXISTS connections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     profile_url TEXT UNIQUE,
-    status TEXT,
-    last_action TEXT,
+    state TEXT,
     data TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_connections_status ON connections(status);
+CREATE INDEX IF NOT EXISTS idx_connections_state ON connections(state);
 CREATE INDEX IF NOT EXISTS idx_connections_created_at ON connections(created_at);
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -31,9 +30,13 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS review_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT, -- 'message', 'connection', 'post'
-    status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'completed'
+    status TEXT DEFAULT 'pending', -- 'pending', 'acknowledged', 'resolved', 'dismissed'
+    priority INTEGER DEFAULT 0,
+    category TEXT,
+    operator_notes TEXT,
     data TEXT, -- JSON blob of the item
     response TEXT, -- Final text to be sent/posted
+    resolved_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -54,6 +54,7 @@ const commonRotationOptions = {
 export const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
+    winston.format.errors({ stack: true }),
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.json()
   ),
@@ -91,11 +92,31 @@ export const logger = winston.createLogger({
 
 // Helper methods for specialized logging
 logger.security = (message, meta = {}) => {
-  logger.info(message, { ...meta, module: 'security' });
+  logger.info(message, { ...meta, module: 'security', category: 'SECURITY' });
 };
 
 logger.ai = (message, meta = {}) => {
-  logger.info(message, { ...meta, module: 'ai' });
+  logger.info(message, { ...meta, module: 'ai', category: 'AI' });
 };
+
+logger.network = (message, meta = {}) => {
+  logger.info(message, { ...meta, category: 'NETWORK' });
+};
+
+// Logs directory size check
+try {
+  const files = fs.readdirSync(logDir);
+  let totalSize = 0;
+  for (const file of files) {
+    const stats = fs.statSync(path.join(logDir, file));
+    totalSize += stats.size;
+  }
+  const sizeMB = totalSize / (1024 * 1024);
+  if (sizeMB > 100) {
+    logger.warn(`Logs directory size is ${sizeMB.toFixed(2)}MB, exceeding 100MB limit. Consider manual cleanup.`, { category: 'SYSTEM' });
+  }
+} catch (err) {
+  console.error('Failed to check logs directory size:', err.message);
+}
 
 export default logger;

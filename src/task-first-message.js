@@ -1,7 +1,10 @@
 import logger from './utils/logger.js';
-import { randomDelay, randomBetween, loadConnections, updateConnectionRecord, isSessionValid, logSessionSummary, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { randomDelay, randomBetween, isSessionValid, logSessionSummary, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
 import { generateFirstMessage } from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
+
+const connectionRepo = new ConnectionRepository();
 
 export async function checkAcceptedConnections(page, signal = null) {
   logger.info('Checking for newly accepted connections with pagination...');
@@ -42,7 +45,7 @@ export async function checkAcceptedConnections(page, signal = null) {
     }
 
     const recentConnections = Array.from(processedUrls);
-    const entries = loadConnections();
+    const entries = connectionRepo.findAllConnections();
     let acceptedCount = 0;
 
     for (const entry of entries) {
@@ -51,12 +54,10 @@ export async function checkAcceptedConnections(page, signal = null) {
         return acceptedCount;
       }
 
-      if (entry.status === 'sent' || entry.status === 'request_sent') { // Check both to be safe
-        const isAccepted = recentConnections.some(url => url.includes(entry.url) || entry.url.includes(url));
+      if (entry.state === 'request_sent') {
+        const isAccepted = recentConnections.some(url => url.includes(entry.profile_url) || entry.profile_url.includes(url));
         if (isAccepted) {
-          await updateConnectionRecord(undefined, entry.url, {
-            status: 'accepted',
-            stage: 'connected',
+          connectionRepo.upsert(entry.profile_url, 'connected', {
             acceptedAt: new Date().toISOString()
           });
           acceptedCount++;
@@ -84,27 +85,25 @@ export async function runFirstMessageWorkflow(page, signal = null) {
   try {
     acceptedFound = await checkAcceptedConnections(page, signal);
 
-    const entries = loadConnections();
+    const entries = connectionRepo.findAllConnections();
     const targets = entries.filter(e => {
-      if (e.status !== 'accepted') return false;
-      if (e.stage === 'first_message_sent') return false;
+      if (e.state === 'first_message_sent') return false;
       
       // Duplicate Protection
-      if (e.stage === 'sending_first_message') {
-        const draftedAt = new Date(e.messageDraftedAt || e.timestamp).getTime();
+      if (e.state === 'sending_first_message') {
+        const draftedAt = new Date(e.messageDraftedAt || e.updated_at).getTime();
         const thirtyMinsAgo = Date.now() - (30 * 60 * 1000);
         if (draftedAt > thirtyMinsAgo) {
           return false;
         }
       }
       
-      return e.stage === 'connected' || e.stage === 'sending_first_message';
+      return e.state === 'connected' || e.state === 'sending_first_message';
     });
 
     const duplicatesPrevented = entries.filter(e => 
-      e.status === 'accepted' && 
-      e.stage === 'sending_first_message' && 
-      new Date(e.messageDraftedAt || e.timestamp).getTime() > (Date.now() - 30 * 60 * 1000)
+      e.state === 'sending_first_message' && 
+      new Date(e.messageDraftedAt || e.updated_at).getTime() > (Date.now() - 30 * 60 * 1000)
     ).length;
 
     logger.info(`Found ${targets.length} connections ready for first message.`);
@@ -117,21 +116,20 @@ export async function runFirstMessageWorkflow(page, signal = null) {
       try {
         const message = await generateFirstMessage(target);
         
-        // CRITICAL FIX 3: Intermediate state for duplicate prevention
-        await updateConnectionRecord(undefined, target.url, {
-          stage: 'sending_first_message',
+        // Intermediate state for duplicate prevention
+        connectionRepo.upsert(target.profile_url, 'sending_first_message', {
           messageDraftedAt: new Date().toISOString()
         });
 
-        logger.info(`Sending message to ${target.name}`);
+        logger.info(`Sending message to ${target.name || target.profile_url}`);
 
-        await page.goto(target.url, { waitUntil: 'networkidle' });
+        await page.goto(target.profile_url, { waitUntil: 'networkidle' });
         await randomDelay(4000, 8000, signal);
 
         let messageButton = await page.$('button.pvs-profile-actions__action:has-text("Message"), a.pvs-profile-actions__action:has-text("Message")');
         
         if (!messageButton) {
-           logger.warn(`Message button not found for ${target.name}`);
+           logger.warn(`Message button not found for ${target.name || target.profile_url}`);
            continue;
         }
 
@@ -150,8 +148,7 @@ export async function runFirstMessageWorkflow(page, signal = null) {
             await humanClick(sendBtn, signal);
             await randomDelay(2000, 4000, signal);
 
-            await updateConnectionRecord(undefined, target.url, {
-              stage: 'first_message_sent',
+            connectionRepo.upsert(target.profile_url, 'first_message_sent', {
               firstMessageSentAt: new Date().toISOString(),
               followUpSent: false
             });
@@ -168,7 +165,7 @@ export async function runFirstMessageWorkflow(page, signal = null) {
           logger.info('First message workflow aborted gracefully due to emergency stop or timeout.');
           return { recordsProcessed: messagesSent };
         }
-        logger.error(`Failed to send message to ${target.name}`, { error: error.message });
+        logger.error(`Failed to send message to ${target.name || target.profile_url}`, { error: error.message });
       }
     }
     

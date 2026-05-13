@@ -1,8 +1,10 @@
 import logger from './utils/logger.js';
-import { randomDelay, randomBetween, appendConnection, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, loadConnections, humanType, humanClick, isWithinOperatingHours, EmergencyStopError } from './utils/helpers.js';
+import { randomDelay, randomBetween, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, humanType, humanClick, isWithinOperatingHours, EmergencyStopError } from './utils/helpers.js';
 import * as claudeService from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
-import path from 'path';
+import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
+
+const connectionRepo = new ConnectionRepository();
 
 export async function searchAndExtractProfiles(page, keyword) {
   logger.info(`Searching for: ${keyword}`);
@@ -161,11 +163,8 @@ export async function runConnectionWorkflow(page, signal = null) {
           );
           
           // Crash protection: Pre-mark as sending
-          await appendConnection('connections', {
-            url: profile.url,
+          connectionRepo.upsert(profile.url, 'sending_connection', {
             name: profile.name,
-            status: 'pending',
-            stage: 'sending_connection',
             messageDraftedAt: new Date().toISOString()
           });
 
@@ -197,9 +196,9 @@ export async function runConnectionWorkflow(page, signal = null) {
   }
 
   // Summary logic
-  const connections = loadConnections('connections');
+  const connections = connectionRepo.findAllConnections();
   const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-  const sentInLastWeek = connections.filter(e => e.status === 'sent' && new Date(e.updated_at).getTime() > oneWeekAgo).length;
+  const sentInLastWeek = connections.filter(e => e.state === 'request_sent' && new Date(e.updated_at).getTime() > oneWeekAgo).length;
 
   await logSessionSummary({
     runType: "connections",
@@ -275,18 +274,15 @@ async function sendConnectionRequest(page, profile, score, note, keyword, signal
   }
 
   /**
-   * Fix 4: Log ALL outcomes (success or failure)
+   * Log ALL outcomes (success or failure)
    */
-  await appendConnection('connections', {
+  connectionRepo.upsert(profile.url, success ? 'request_sent' : 'failed', {
     name: profile.name,
     headline: profile.headline,
     company: profile.company,
-    url: profile.url,
     score,
     note,
     variant: Math.random() < 0.5 ? 'A' : 'B',
-    status: success ? 'sent' : 'failed',
-    stage: success ? 'request_sent' : null,
     sourceKeyword: keyword,
     campaign: 'phase4-outbound',
     failureReason: success ? null : failureReason

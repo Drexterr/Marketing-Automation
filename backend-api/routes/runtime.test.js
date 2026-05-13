@@ -74,7 +74,7 @@ test('POST /api/runtime/modules/stop triggers emergency stop', async (t) => {
 
 test('POST /api/runtime/modules/toggle/:module sets module state', async (t) => {
     const req = { 
-        params: { module: 'test_module' },
+        params: { module: 'task-connect' },
         body: { enabled: true }
     };
     let jsonCalled = false;
@@ -104,7 +104,7 @@ test('POST /api/runtime/modules/stop actually sets emergency_stop flag', async (
 });
 
 test('POST /api/runtime/modules/toggle/:module actually sets module flag', async (t) => {
-    const moduleName = 'test_toggle_side_effect';
+    const moduleName = 'task-feed';
     const req = { 
         params: { module: moduleName },
         body: { enabled: false }
