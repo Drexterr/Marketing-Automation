@@ -82,6 +82,10 @@ export const RuntimeStateService = {
             pulseTimeout = setTimeout(writePulse, THROTTLE_MS);
         }
     },
+    updatePulse: (updates) => {
+        const current = repo.get('runtime_pulse') || { status: 'IDLE', activeTask: null };
+        RuntimeStateService.setPulse({ ...current, ...updates });
+    },
     getPulse: () => {
         return repo.get('runtime_pulse') || { status: 'IDLE', activeTask: null };
     },

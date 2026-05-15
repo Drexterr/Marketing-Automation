@@ -34,6 +34,12 @@ router.post('/modules/stop', (req, res) => {
     res.json({ success: true });
 });
 
+router.post('/modules/resume', (req, res) => {
+    RuntimeStateService.setFlag('emergency_stop', false);
+    RuntimeStateService.setPulse({ status: 'IDLE', activeTask: null });
+    res.json({ success: true });
+});
+
 router.post('/modules/toggle/:module', (req, res) => {
     const { module } = req.params;
     const { enabled } = req.body;

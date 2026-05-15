@@ -90,10 +90,8 @@ function validateSystem() {
       logger.warn('LINKEDIN_EMAIL or LINKEDIN_PASSWORD not set in .env. Setup/re-login may require manual entry.');
     }
 
-    // Check for Claude API Key if in CLI mode
-    if ((process.env.CLAUDE_MODE || 'cli').toLowerCase() === 'cli' && !process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY not set in .env (required for CLAUDE_MODE=cli)');
-    }
+    // API key is only needed when calling the Anthropic API directly (CLAUDE_MODE=api).
+    // CLI mode uses the locally logged-in `claude` binary — no key required.
 
     // Pre-hash password and validate it can be hashed
     getDashboardHash();

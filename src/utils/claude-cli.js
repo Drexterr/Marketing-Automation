@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 import logger from './logger.js';
 
 // Calls the Claude CLI with a single combined prompt.
@@ -17,14 +18,17 @@ export async function callCLI(prompt, retries = 2) {
 
 function _spawn(prompt) {
   return new Promise((resolve, reject) => {
-    // shell:false is used for security to harden against command injection.
-    // On Windows, 'claude' resolves to 'claude.exe' in the user's local bin, 
-    // so it works without shell:true.
+    // On Windows, npm global binaries are .cmd files and cannot be spawned
+    // with shell:false. We use shell:true only on Windows; on POSIX the binary
+    // is a real executable so shell:false is fine (and safer).
+    const isWindows = process.platform === 'win32';
     const command = 'claude';
-    
+
+    // Run from tmp dir so Claude CLI doesn't load this project's CLAUDE.md/memory
     const proc = spawn(command, ['--output-format', 'text', '-p', prompt], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
+      shell: isWindows,
+      cwd: tmpdir(),
       timeout: 90000
     });
 

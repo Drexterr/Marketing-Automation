@@ -4,6 +4,8 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { cn } from "@/lib/utils";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { SystemProvider } from "@/components/providers/system-provider";
+import { SystemHealthBanner } from "@/components/dashboard/SystemHealthBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,12 +37,19 @@ export default function RootLayout({
         )}
       >
         <QueryProvider>
-          <Sidebar />
-          <main className="flex-1 h-screen overflow-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/20 via-background to-background p-8">
-            <div className="max-w-7xl mx-auto w-full">
-              {children}
+          <SystemProvider>
+            <div className="flex flex-col h-screen w-full">
+              <SystemHealthBanner />
+              <div className="flex flex-1 overflow-hidden">
+                <Sidebar />
+                <main className="flex-1 overflow-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/20 via-background to-background p-8">
+                  <div className="max-w-7xl mx-auto w-full">
+                    {children}
+                  </div>
+                </main>
+              </div>
             </div>
-          </main>
+          </SystemProvider>
         </QueryProvider>
       </body>
     </html>

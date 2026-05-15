@@ -15,7 +15,7 @@ export function up(db) {
     }
 
     db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_connections_status ON connections(status);
+      CREATE INDEX IF NOT EXISTS idx_connections_state ON connections(state);
       CREATE INDEX IF NOT EXISTS idx_connections_created_at ON connections(created_at);
     `);
     console.log('Indexes created successfully.');

@@ -7,6 +7,7 @@ import activityRoutes from './routes/activity.js';
 import promptsRoutes from './routes/prompts.js';
 import runtimeRoutes from './routes/runtime.js';
 import reviewQueueRoutes from './routes/review-queue.js';
+import workflowRoutes from '../src/routes/workflows.js';
 import { authMiddleware } from './middleware/auth.js';
 import { securityMiddleware } from './middleware/security.js';
 import { testClaudeConnection } from '../src/claude-service.js';
@@ -31,6 +32,7 @@ export function createServer() {
   app.use('/api/prompts', authMiddleware, promptsRoutes);
   app.use('/api/runtime', authMiddleware, runtimeRoutes);
   app.use('/api/review-queue', authMiddleware, reviewQueueRoutes);
+  app.use('/api/workflows', authMiddleware, workflowRoutes);
 
   return app;
 }

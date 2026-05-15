@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { createServer } from './server.js';
 import { stateManager } from '../shared/state/StateManager.js';
 

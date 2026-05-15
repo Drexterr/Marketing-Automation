@@ -1,34 +1,12 @@
 {
-  "connectionsSent": 3,
-  "accepted": 2,
-  "acceptanceRate": 66.7,
-  "firstMessagesSent": 2,
-  "replies": 1,
-  "replyRate": 50,
-  "highIntentReplies": 1,
-  "byCampaign": {
-    "phase4-outbound": {
-      "sent": 3,
-      "accepted": 2,
-      "replies": 1
-    }
-  },
-  "byKeyword": {
-    "founder": {
-      "sent": 1,
-      "accepted": 1,
-      "replies": 1
-    },
-    "cto": {
-      "sent": 1,
-      "accepted": 1,
-      "replies": 0
-    },
-    "sales": {
-      "sent": 1,
-      "accepted": 0,
-      "replies": 0
-    }
-  },
-  "lastUpdated": "2026-05-07T07:52:46.402Z"
+  "connectionsSent": 1,
+  "accepted": 0,
+  "acceptanceRate": 0,
+  "firstMessagesSent": 0,
+  "replies": 0,
+  "replyRate": 0,
+  "highIntentReplies": 0,
+  "byCampaign": {},
+  "byKeyword": {},
+  "lastUpdated": "2026-05-14T09:55:43.815Z"
 }

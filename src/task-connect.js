@@ -9,10 +9,36 @@ const connectionRepo = new ConnectionRepository();
 export async function searchAndExtractProfiles(page, keyword) {
   logger.info(`Searching for: ${keyword}`);
   const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keyword)}&origin=CLUSTER_EXPANSION`;
-  
+
   try {
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.reusable-search__result-container', { timeout: 15000 });
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // LinkedIn periodically renames result container classes — try multiple selectors
+    const resultSelectors = [
+      '.reusable-search__result-container',
+      '.search-results-container .entity-result',
+      'li.reusable-search__result-container',
+      '[data-view-name="search-entity-result-universal-template"]',
+      '.search-results__list .entity-result',
+      '.entity-result'
+    ];
+
+    let found = false;
+    for (const sel of resultSelectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 8000 });
+        found = true;
+        logger.info(`Search results loaded using selector: ${sel}`);
+        break;
+      } catch {
+        // try next
+      }
+    }
+
+    if (!found) {
+      logger.warn(`No result selector matched for keyword: ${keyword}. Page may require login or selector has changed.`);
+      return [];
+    }
 
     await page.evaluate(async () => {
       window.scrollTo(0, document.body.scrollHeight);
@@ -21,27 +47,80 @@ export async function searchAndExtractProfiles(page, keyword) {
 
     const profiles = await page.evaluate(() => {
       const results = [];
-      const containers = document.querySelectorAll('.reusable-search__result-container');
-      
-      containers.forEach(container => {
-        const nameElement = container.querySelector('.entity-result__title-text a span[aria-hidden="true"]');
-        const headlineElement = container.querySelector('.entity-result__primary-subtitle');
-        const companyElement = container.querySelector('.entity-result__secondary-subtitle');
-        const linkElement = container.querySelector('.entity-result__title-text a');
+      const seen = new Set();
 
-        if (nameElement && headlineElement && linkElement) {
-          results.push({
-            name: nameElement.innerText.trim(),
-            headline: headlineElement.innerText.trim(),
-            company: companyElement ? companyElement.innerText.trim() : '',
-            url: linkElement.href.split('?')[0]
-          });
-        }
+      // Collect all candidate card elements — try both old and new LinkedIn DOM
+      const containers = Array.from(new Set([
+        ...document.querySelectorAll('.reusable-search__result-container'),
+        ...document.querySelectorAll('[data-view-name="search-entity-result-universal-template"]'),
+        ...document.querySelectorAll('.entity-result')
+      ]));
+
+      containers.forEach(container => {
+        // Profile URL — must have /in/ path
+        const linkEl =
+          container.querySelector('.entity-result__title-text a[href*="/in/"]') ||
+          container.querySelector('a[href*="/in/"]');
+        if (!linkEl) return;
+
+        const url = linkEl.href.split('?')[0];
+        if (seen.has(url)) return;
+        seen.add(url);
+
+        // Name — try multiple selectors in order of specificity
+        const nameEl =
+          container.querySelector('.entity-result__title-text a span[aria-hidden="true"]') ||
+          container.querySelector('a[href*="/in/"] span[aria-hidden="true"]') ||
+          container.querySelector('[data-anonymize="person-name"]') ||
+          container.querySelector('.entity-result__title-text') ||
+          linkEl;
+        const name = nameEl?.innerText?.trim() || linkEl.getAttribute('aria-label')?.trim() || '';
+        if (!name || name.length < 2) return;
+
+        // Headline
+        const headline =
+          container.querySelector('.entity-result__primary-subtitle')?.innerText?.trim() ||
+          container.querySelector('[data-anonymize="headline"]')?.innerText?.trim() ||
+          '';
+
+        // Company
+        const company =
+          container.querySelector('.entity-result__secondary-subtitle')?.innerText?.trim() ||
+          container.querySelector('[data-anonymize="company-name"]')?.innerText?.trim() ||
+          '';
+
+        // Open to Work badge detection
+        const cardText = (container.innerText || '').toLowerCase();
+        const hasOtwBadge =
+          !!container.querySelector('[aria-label*="Open to work" i]') ||
+          !!container.querySelector('.open-to-work-banner') ||
+          !!container.querySelector('img[alt*="Open to work" i]') ||
+          !!container.querySelector('[class*="open-to-work"]') ||
+          cardText.includes('open to work') ||
+          cardText.includes('#opentowork');
+
+        results.push({ name, headline, company, url, isOpenToWork: hasOtwBadge });
       });
       return results;
     });
 
-    logger.info(`Found ${profiles.length} profiles for keyword: ${keyword}`);
+    const otwCount = profiles.filter(p => p.isOpenToWork).length;
+    logger.info(`Found ${profiles.length} profiles for keyword: ${keyword} (${otwCount} Open to Work)`);
+
+    if (profiles.length === 0) {
+      // Capture the actual DOM so we can inspect which selectors are present
+      const domSample = await page.evaluate(() => {
+        const items = document.querySelectorAll('[data-view-name="search-entity-result-universal-template"], .reusable-search__result-container, .entity-result');
+        if (!items.length) return 'NO_RESULT_ELEMENTS_FOUND';
+        const first = items[0];
+        return {
+          outerHTML: first.outerHTML.slice(0, 2000),
+          totalItems: items.length
+        };
+      });
+      logger.warn('Zero profiles extracted — DOM sample for debugging', { domSample });
+    }
+
     return profiles;
   } catch (error) {
     logger.error(`Error during search for ${keyword}`, { error: error.message });
@@ -57,8 +136,16 @@ async function scrapeProfileDetails(page, profile, signal = null) {
 
     const details = await page.evaluate(() => {
       const about = document.querySelector('#about ~ .pvs-list span[aria-hidden=true]')?.innerText || '';
-      // Open to work badge often has a specific class or alt text in the profile photo area
-      const isOpenToWork = !!document.querySelector('img[alt*="Open to Work"]'); 
+      const bodyText = document.body.innerText || '';
+      const isOpenToWork =
+        !!document.querySelector('[aria-label*="Open to work" i]') ||
+        !!document.querySelector('.open-to-work-banner') ||
+        !!document.querySelector('img[alt*="Open to work" i]') ||
+        !!document.querySelector('[class*="open-to-work"]') ||
+        // Profile page shows a green frame around the photo with aria-label
+        !!document.querySelector('.pv-top-card-profile-picture__container [aria-label*="Open to work" i]') ||
+        bodyText.toLowerCase().includes('#opentowork') ||
+        bodyText.toLowerCase().includes('open to work');
       return { about, isOpenToWork };
     });
 
@@ -98,6 +185,7 @@ export async function runConnectionWorkflow(page, signal = null) {
   let dailyLimitHit = false;
 
   logger.info(`Starting run: Weekly Limit = ${weeklyLimit}, Daily Cap = ${dailyCap}`);
+  RuntimeStateService.setPulse({ status: 'RUNNING', activeTask: 'connect', progressPercent: 0 });
 
   for (const keyword of keywords) {
     if (RuntimeStateService.shouldStop('connect') || signal?.aborted) {
@@ -116,7 +204,17 @@ export async function runConnectionWorkflow(page, signal = null) {
       break;
     }
 
-    const profiles = await searchAndExtractProfiles(page, keyword);
+    const rawProfiles = await searchAndExtractProfiles(page, keyword);
+
+    // Open to Work profiles get processed first as priority audience
+    const profiles = [
+      ...rawProfiles.filter(p => p.isOpenToWork),
+      ...rawProfiles.filter(p => !p.isOpenToWork)
+    ];
+
+    if (rawProfiles.some(p => p.isOpenToWork)) {
+      logger.info(`Prioritizing ${rawProfiles.filter(p => p.isOpenToWork).length} Open to Work profiles`);
+    }
 
     for (const profile of profiles) {
       if (RuntimeStateService.shouldStop('connect') || signal?.aborted) {
@@ -141,19 +239,26 @@ export async function runConnectionWorkflow(page, signal = null) {
       }
 
       logger.info(`Evaluating profile: ${profile.name}`);
-      
+      RuntimeStateService.updatePulse({ activeTask: `connect: evaluating ${profile.name}` });
+
       try {
-        // Deep Scrape for high priority keywords or tech roles
-        const isHighPriority = profile.headline.toLowerCase().includes('fresher') || 
+        // Deep-scrape Open to Work profiles always, plus high-priority headline keywords
+        const isHighPriority = profile.isOpenToWork ||
+                               profile.headline.toLowerCase().includes('fresher') ||
                                profile.headline.toLowerCase().includes('seeking') ||
                                profile.headline.toLowerCase().includes('looking');
-        
+
         if (isHighPriority || evaluationScoreHeuristic(profile.headline)) {
           await scrapeProfileDetails(page, profile, signal);
         }
 
         const evaluation = await claudeService.evaluateConnectionTarget(profile);
-        logger.info(`Score: ${evaluation.score} - ${evaluation.reason}`);
+        // Boost score for Open to Work profiles — they are the primary target audience
+        if (profile.isOpenToWork && evaluation.score >= 5) {
+          evaluation.score = Math.min(10, evaluation.score + 2);
+          evaluation.reason = `[Open to Work] ${evaluation.reason}`;
+        }
+        logger.info(`Score: ${evaluation.score} - ${evaluation.reason}${profile.isOpenToWork ? ' [OTW priority]' : ''}`);
 
         if (evaluation.score >= 7) {
           const note = await claudeService.generateConnectionNote(
@@ -168,10 +273,12 @@ export async function runConnectionWorkflow(page, signal = null) {
             messageDraftedAt: new Date().toISOString()
           });
 
+          RuntimeStateService.updatePulse({ activeTask: `connect: sending to ${profile.name}` });
           const sent = await sendConnectionRequest(page, profile, evaluation.score, note, keyword, signal);
           if (sent) {
             connectionsSent++;
-            await randomDelay(8000, 25000, signal); // Uses new Phase 3 defaults (8-25s)
+            RuntimeStateService.updatePulse({ activeTask: `connect: sent ${connectionsSent} today` });
+            await randomDelay(8000, 25000, signal);
           } else {
             failed++;
           }
@@ -208,6 +315,7 @@ export async function runConnectionWorkflow(page, signal = null) {
     weeklyLimitRemaining: Math.max(0, weeklyLimit - sentInLastWeek)
   });
 
+  RuntimeStateService.setPulse({ status: 'IDLE', activeTask: null, progressPercent: 100 });
   return { recordsProcessed: connectionsSent };
 }
 

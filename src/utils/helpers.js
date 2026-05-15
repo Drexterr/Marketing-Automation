@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
 import { sendAlert, sendCritical } from './alerts.js';
+import logger from './logger.js';
 import { RuntimeStateService } from '../../backend-api/services/RuntimeStateService.js';
 import { ConnectionRepository } from '../../shared/repositories/ConnectionRepository.js';
 import { ReviewQueueRepository } from '../../shared/repositories/ReviewQueueRepository.js';
@@ -114,7 +115,56 @@ export async function takeScreenshotOnFailure(page, operationName) {
 
 export async function isSessionValid(page) {
   try {
-    const currentUrl = page.url();
+    let currentUrl = page.url();
+    
+    // If we're on a blank page, navigate to feed first to check session
+    if (currentUrl === 'about:blank' || currentUrl === 'data:,') {
+      logger.info('Initializing session check via LinkedIn feed');
+      await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      currentUrl = page.url();
+    }
+
+    // Handle "Choose an account" or "Welcome back" screens
+    const accountChooserHeader = await page.$('h1:has-text("Choose an account"), h1:has-text("Welcome back")');
+    if (accountChooserHeader) {
+      logger.info('LinkedIn Account Chooser/Welcome Back screen detected. Attempting to select account...');
+      
+      const founderName = process.env.FOUNDER_NAME;
+      let accountButton = null;
+      
+      if (founderName) {
+        // Try to find button with founder name
+        accountButton = await page.$(`button:has-text("${founderName}"), [aria-label*="${founderName}"]`);
+      }
+      
+      if (!accountButton) {
+        // Fallback to the first account chooser item
+        accountButton = await page.$('[data-test-id="account-chooser-item"], .auth-account-chooser__item, button.cp-account-chooser__item');
+      }
+
+      if (accountButton) {
+        logger.info('Clicking saved account button...');
+        await accountButton.click();
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        currentUrl = page.url();
+
+        // Check if password is requested after selecting account
+        const passwordField = await page.$('input[name="session_password"], input#password');
+        if (passwordField && process.env.LINKEDIN_PASSWORD) {
+          logger.info('Password requested for saved account. Attempting automated entry...');
+          await humanType(passwordField, process.env.LINKEDIN_PASSWORD);
+          const signinBtn = await page.$('button[type="submit"], button:has-text("Sign in")');
+          if (signinBtn) {
+            await signinBtn.click();
+            await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            currentUrl = page.url();
+          }
+        }
+      } else {
+        logger.warn('Account chooser detected but no account button found');
+      }
+    }
+
     if (currentUrl.includes('linkedin.com/checkpoint/challenge')) {
       logger.security('Security checkpoint detected!', { url: currentUrl });
       RuntimeStateService.emergencyStop();
@@ -141,6 +191,13 @@ export async function isSessionValid(page) {
       RuntimeStateService.emergencyStop(); // Propagate stop signal
       return false;
     }
+
+    // Double check we are actually on a LinkedIn page and not redirected to a generic login or landing
+    if (!currentUrl.includes('linkedin.com')) {
+      logger.warn('Page redirected away from LinkedIn during session check', { url: currentUrl });
+      return false;
+    }
+
     return true;
   } catch (e) {
     logger.warn('Error during session validation', { error: e.message });
@@ -225,7 +282,85 @@ export const randomDelay = async (min = 8000, max = 25000, signal = null) => {
   }
 };
 
+export async function withTimeout(promise, ms, label = 'task', controller = null) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (controller && typeof controller.abort === 'function') {
+        logger.warn(`Timeout: Aborting ${label} controller`);
+        controller.abort();
+      }
+      reject(new Error(`Timeout exceeded: ${label} took longer than ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function logSessionSummary(summary) {
+  const logFile = path.join(process.cwd(), 'logs', 'session-summary.ndjson');
+  const dir = path.dirname(logFile);
+  await fsPromises.mkdir(dir, { recursive: true });
+  
+  const line = JSON.stringify({
+    ...summary,
+    timestamp: new Date().toISOString()
+  }) + '\n';
+  
+  await fsPromises.appendFile(logFile, line);
+}
+
+/**
+ * Updated to use ConnectionRepository
+ */
+export function checkWeeklyLimit(filePath, limit) {
+  const count = connectionRepo.countSentInLast7Days();
+  return count < limit;
+}
+
+/**
+ * Generic loader for feed data
+ */
+export function loadFeedData(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Generic append for feed system
+ */
+export const appendAction = async (filePath, entry) => {
+  if (filePath.includes('connections-sent')) {
+     const { url, status, lastAction, ...data } = entry;
+     return connectionRepo.upsert(url, status || 'sent', lastAction || 'connect', data);
+  }
+
+  const dir = path.dirname(filePath);
+  await fsPromises.mkdir(dir, { recursive: true });
+
+  const line = JSON.stringify({
+    ...entry,
+    timestamp: new Date().toISOString()
+  }) + '\n';
+
+  await fsPromises.appendFile(filePath, line);
+};
+
 export function isWithinOperatingHours() {
+  if (process.env.DASHBOARD_TRIGGERED === 'true') {
+    logger.info('Manual trigger detected - bypassing operating hours check');
+    return true;
+  }
   const hour = new Date().getHours();
   return hour >= 9 && hour < 20;
 }

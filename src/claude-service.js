@@ -2,12 +2,8 @@
  * claude-service.js
  *
  * Routes all AI calls to either:
- *   CLAUDE_MODE=cli  → spawns `claude --no-markdown -p "..."` in a shell
+ *   CLAUDE_MODE=cli  → spawns `claude -p "..."` (default, uses Pro account auth)
  *   CLAUDE_MODE=web  → opens claude.ai in a Playwright tab and types the prompt
- *
- * Every exported function builds a self-contained prompt (context + task +
- * output rules) and passes it to callClaude(). The rest of the codebase calls
- * these functions exactly as before — nothing else needs to change.
  */
 
 import logger from './utils/logger.js';
@@ -16,38 +12,37 @@ import { getWebClient, closeWebClient } from './utils/claude-web.js';
 import { sanitizePromptInput } from './utils/sanitizer.js';
 import { getSystemState, updateSystemState } from './utils/helpers.js';
 
-const MODE = (process.env.CLAUDE_MODE || 'cli').toLowerCase(); // 'cli' | 'web'
-
 let consecutiveFailures = 0;
 
 // ─── Core dispatcher ──────────────────────────────────────────────────────────
 
 async function callClaude(prompt) {
+  const mode = (process.env.CLAUDE_MODE || 'cli').toLowerCase();
   try {
     let result;
-    if (MODE === 'web') {
+    if (mode === 'web') {
       const client = await getWebClient();
       result = await client.ask(prompt);
     } else {
       result = await callCLI(prompt);
     }
-    
+
     // Reset on success
     if (consecutiveFailures > 0) {
       consecutiveFailures = 0;
       await updateSystemState({ degradedMode: false });
     }
-    
+
     return result;
   } catch (error) {
     consecutiveFailures++;
     logger.error(`Claude call failed (attempt ${consecutiveFailures})`, { error: error.message });
-    
+
     if (consecutiveFailures === 5) {
       logger.error('CRITICAL: AI service has become degraded after 5 consecutive failures');
       await updateSystemState({ degradedMode: true });
     }
-    
+
     throw error;
   }
 }
@@ -98,11 +93,9 @@ Core user to keep in mind: ${icpCoreUser}
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function testClaudeConnection() {
-  logger.info(`Testing Claude connection (mode: ${MODE})`);
+  logger.info(`Testing Claude connection (mode: ${process.env.CLAUDE_MODE || 'cli'})`);
   try {
-    const result = MODE === 'web'
-      ? await (async () => { const c = await getWebClient(); return c.ask('Reply with exactly: connection successful'); })()
-      : await testCLI();
+    const result = await callClaude('Reply with exactly: connection successful');
     logger.info(`Claude connection OK: "${result.slice(0, 60)}"`);
     return { status: 'HEALTHY' };
   } catch (error) {

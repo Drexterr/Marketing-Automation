@@ -5,6 +5,8 @@ import logger from './utils/logger.js';
 import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
 import { authMiddleware } from '../backend-api/middleware/auth.js';
 import authRoutes from '../backend-api/routes/auth.js';
+import workflowRoutes from './routes/workflows.js';
+import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 
 const app = express();
 const port = process.env.DASHBOARD_PORT || 3000;
@@ -14,6 +16,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/workflows', authMiddleware, workflowRoutes);
 
 app.get('/api/stats', authMiddleware, (req, res) => {
   try {
@@ -48,8 +51,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Serve static dashboard files
-app.use(express.static('public'));
 
 export function startDashboard() {
   app.listen(port, '127.0.0.1', () => {
