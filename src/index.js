@@ -176,7 +176,8 @@ async function connect(signal) {
 
 async function feed(signal) {
   try {
-    const result = await runFeedCommenting(3);
+    const count = parseInt(process.env.FEED_MAX_PER_SESSION || '3', 10);
+    const result = await runFeedCommenting(count);
     return result;
   } catch (error) {
     logger.error('Feed task failed', { message: error.message, stack: error.stack });

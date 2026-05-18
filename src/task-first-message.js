@@ -1,5 +1,6 @@
 import logger from './utils/logger.js';
 import { randomDelay, randomBetween, isSessionValid, logSessionSummary, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { visionClick, visionFindEditor } from './utils/vision.js';
 import { generateFirstMessage } from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
@@ -126,40 +127,53 @@ export async function runFirstMessageWorkflow(page, signal = null) {
         await page.goto(target.profile_url, { waitUntil: 'domcontentloaded' });
         await randomDelay(4000, 8000, signal);
 
-        let messageButton = await page.$('button.pvs-profile-actions__action:has-text("Message"), a.pvs-profile-actions__action:has-text("Message")');
-        
-        if (!messageButton) {
-           logger.warn(`Message button not found for ${target.name || target.profile_url}`);
-           continue;
+        // Try aria-label first, fall back to vision
+        let msgClicked = false;
+        const msgBtn = await page.$('button[aria-label*="Message" i], a[aria-label*="Message" i]');
+        if (msgBtn && await msgBtn.isVisible().catch(() => false)) {
+          await humanClick(msgBtn, signal);
+          msgClicked = true;
+        } else {
+          msgClicked = await visionClick(page, `the "Message" button in the profile action buttons area`);
         }
 
-        await humanClick(messageButton, signal);
+        if (!msgClicked) {
+          logger.warn(`Message button not found for ${target.name || target.profile_url}`);
+          continue;
+        }
+
         await randomDelay(2000, 4000, signal);
 
-        const existingMessages = await page.$$('.msg-s-event-listitem');
+        // Check for existing conversation history (DOM read — reliable)
+        const existingMessages = await page.$$('.msg-s-event-listitem, [class*="msg-s-event-listitem"]');
         if (existingMessages.length > 0) {
-            logger.info(`Conversation history already exists for ${target.name || target.profile_url}. Skipping first message to prevent duplicate.`);
-            connectionRepo.upsert(target.profile_url, 'first_message_sent', {
-              firstMessageSentAt: new Date().toISOString(),
-              followUpSent: false
-            });
-            const closeBtn = await page.$('button.msg-overlay-bubble-header__control--close-btn');
-            if (closeBtn) await humanClick(closeBtn, signal);
-            continue;
+          logger.info(`Conversation already exists for ${target.name || target.profile_url} — skipping`);
+          connectionRepo.upsert(target.profile_url, 'first_message_sent', {
+            firstMessageSentAt: new Date().toISOString(),
+            followUpSent: false
+          });
+          await visionClick(page, 'close button (X) on the message overlay or dialog');
+          continue;
         }
 
-        const editor = await page.$('div.msg-form__contenteditable');
+        const editor = await visionFindEditor(page, 6000);
         if (editor) {
-          await editor.focus();
-          await editor.fill(''); 
-          await humanType(editor, message, signal); 
+          await editor.fill?.('').catch(() => {});
+          await humanType(editor, message, signal);
           await randomDelay(2000, 5000, signal);
-          
-          const sendBtn = await page.$('button.msg-form__send-button');
-          if (sendBtn && !(await sendBtn.isDisabled())) {
-            await humanClick(sendBtn, signal);
-            await randomDelay(2000, 4000, signal);
 
+          // Send button — try aria-label, then vision
+          let sent = false;
+          const sendBtn = await page.$('button[aria-label*="Send" i]:not([disabled])');
+          if (sendBtn) {
+            await humanClick(sendBtn, signal);
+            sent = true;
+          } else {
+            sent = await visionClick(page, 'the enabled "Send" button for the message');
+          }
+
+          if (sent) {
+            await randomDelay(2000, 4000, signal);
             connectionRepo.upsert(target.profile_url, 'first_message_sent', {
               firstMessageSentAt: new Date().toISOString(),
               followUpSent: false
@@ -167,9 +181,11 @@ export async function runFirstMessageWorkflow(page, signal = null) {
             messagesSent++;
           }
         }
-        
-        const closeBtn = await page.$('button.msg-overlay-bubble-header__control--close-btn');
+
+        // Close the message overlay
+        const closeBtn = await page.$('button[aria-label*="Close" i], button[aria-label*="close" i]');
         if (closeBtn) await humanClick(closeBtn, signal);
+        else await visionClick(page, 'close (X) button on the message overlay');
         
         await randomDelay(12000, 25000, signal);
       } catch (error) {

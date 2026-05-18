@@ -1,5 +1,6 @@
 import logger from './utils/logger.js';
 import { randomDelay, isSessionValid, updateSystemState, getSystemState, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { visionClick, visionFindEditor } from './utils/vision.js';
 import { generateLinkedInPost } from './claude-service.js';
 
 export async function runPostContent(page, signal = null) {
@@ -9,11 +10,15 @@ export async function runPostContent(page, signal = null) {
     return { recordsProcessed: 0 };
   }
 
-  // Only post 2x per week (Tue and Thu)
   const now = new Date();
-  const day = now.getDay(); // 0 = Sunday, 2 = Tuesday, 4 = Thursday
-  if (day !== 2 && day !== 4) {
-    logger.info('Not a scheduled posting day (Tuesday or Thursday). skipping.');
+  const day = now.getDay(); // 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+  const frequency = process.env.POST_FREQUENCY || 'biweekly';
+  // daily = every day, weekly = Monday only, biweekly = Tuesday + Thursday
+  const postToday = frequency === 'daily'
+    || (frequency === 'weekly' && day === 1)
+    || (frequency === 'biweekly' && (day === 2 || day === 4));
+  if (!postToday) {
+    logger.info(`Not a scheduled posting day for frequency "${frequency}". Skipping.`);
     return { recordsProcessed: 0 };
   }
 
@@ -36,24 +41,39 @@ export async function runPostContent(page, signal = null) {
   let posted = false;
 
   try {
-    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
-    await randomDelay(5000, 8000, signal);
+    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'networkidle', timeout: 45000 });
+    await randomDelay(3000, 6000, signal);
 
-    const startPostButton = await page.$('.share-box-feed-entry__trigger');
-    if (startPostButton) {
-      await humanClick(startPostButton, signal);
+    // Click "Start a post" — try aria-label, then vision
+    let startClicked = false;
+    const startBtn = await page.$('[aria-label*="Start a post" i], [placeholder*="Start a post" i]');
+    if (startBtn) {
+      await humanClick(startBtn, signal);
+      startClicked = true;
+    } else {
+      startClicked = await visionClick(page, '"Start a post" text box or button at the top of the LinkedIn feed');
+    }
+
+    if (startClicked) {
       await randomDelay(2000, 4000, signal);
 
-      const editor = await page.$('.ql-editor[role="textbox"]');
+      const editor = await visionFindEditor(page, 8000);
       if (editor) {
         await humanType(editor, postContent, signal);
         await randomDelay(3000, 5000, signal);
 
-        const postButton = await page.$('.share-actions__primary-action');
-        if (postButton) {
-          await humanClick(postButton, signal);
+        // "Post" submit button — try aria-label, then vision
+        let submitted = false;
+        const postBtn = await page.$('button[aria-label*="Post" i]:not([disabled]), .share-actions__primary-action');
+        if (postBtn) {
+          await humanClick(postBtn, signal);
+          submitted = true;
+        } else {
+          submitted = await visionClick(page, 'the blue "Post" submit button to publish the LinkedIn post');
+        }
+
+        if (submitted) {
           await randomDelay(5000, 10000, signal);
-          
           await updateSystemState({ lastPostDate: now.toISOString() });
           logger.info('Successfully posted LinkedIn content.');
           posted = true;

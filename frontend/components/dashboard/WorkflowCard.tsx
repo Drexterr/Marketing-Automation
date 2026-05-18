@@ -12,6 +12,16 @@ interface WorkflowCardProps {
 
 const RISKY_WORKFLOWS = ['connect', 'first-message', 'replies'];
 
+const DESCRIPTIONS: Record<string, string> = {
+  'connect':       'Searches LinkedIn for target profiles, scores them with AI, and sends personalised connection requests (max 100/week).',
+  'first-message': 'Sends a personalised opening message to new 1st-degree connections who haven\'t been messaged yet.',
+  'replies':       'Reads unread conversations and generates contextual replies using AI.',
+  'followups':     'Sends follow-up messages to connections that haven\'t responded after a set interval.',
+  'feed':          'Scrolls the LinkedIn feed, scores posts for relevance, and leaves thoughtful AI-generated comments (max 10/session).',
+  'post':          'Drafts and publishes a LinkedIn post using AI based on your product context.',
+  'analytics':     'Pulls engagement and outreach stats into the dashboard.',
+};
+
 export function WorkflowCard({ workflow, onRefresh }: WorkflowCardProps) {
   const { state: systemState } = useSystem();
   const [loading, setLoading] = useState(false);
@@ -28,7 +38,12 @@ export function WorkflowCard({ workflow, onRefresh }: WorkflowCardProps) {
     setLoading(true);
     setError(null);
     try {
-      await startWorkflow(workflow.name);
+      let params: Record<string, any> | undefined;
+      try {
+        const wfSettings = JSON.parse(localStorage.getItem(`wf-settings-${workflow.name}`) || '{}');
+        if (Object.keys(wfSettings).length > 0) params = wfSettings;
+      } catch {}
+      await startWorkflow(workflow.name, params);
       onRefresh();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to start workflow');
@@ -92,11 +107,18 @@ export function WorkflowCard({ workflow, onRefresh }: WorkflowCardProps) {
         </div>
       </div>
       
+      {/* Description — expands on hover */}
+      {DESCRIPTIONS[workflow.name] && (
+        <div className="overflow-hidden max-h-0 group-hover:max-h-16 transition-all duration-300 ease-in-out">
+          <p className="text-[11px] text-slate-400 leading-snug pb-2 pt-0">{DESCRIPTIONS[workflow.name]}</p>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
         <div className="flex items-center gap-1.5">
           <Clock size={12} />
-          {workflow.lastRunTime !== 'Unknown' && workflow.lastRunTime 
-            ? new Date(workflow.lastRunTime).toLocaleTimeString() 
+          {workflow.lastRunTime !== 'Unknown' && workflow.lastRunTime
+            ? new Date(workflow.lastRunTime).toLocaleTimeString()
             : '--:--'}
         </div>
       </div>

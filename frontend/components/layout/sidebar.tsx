@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Settings, MessageSquare, BarChart3, Terminal, Power, Bell, Shield } from 'lucide-react';
+import { LayoutDashboard, Settings, MessageSquare, BarChart3, Terminal, Power, Bell, Shield, SlidersHorizontal } from 'lucide-react';
 import { StatusIndicator } from './status-indicator';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ const navItems = [
   { href: '/inbox', label: 'Inbox', icon: MessageSquare },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/prompts', label: 'Prompts', icon: Terminal },
+  { href: '/controls', label: 'Controls', icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {

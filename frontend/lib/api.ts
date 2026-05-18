@@ -27,6 +27,11 @@ export const getAnalytics = async () => {
   return data;
 };
 
+export const getAnalyticsDetails = async (type: string) => {
+  const { data } = await api.get(`/analytics/details?type=${type}`);
+  return data;
+};
+
 export const getActivity = async () => {
   const { data } = await api.get('/activity');
   return data;
@@ -74,6 +79,16 @@ export const getReviewQueue = async () => {
 
 export const updateReviewItem = async (id: string, status: string, response?: string) => {
   const { data } = await api.post(`/review-queue/${id}`, { status, response });
+  return data;
+};
+
+export const getConfig = async (): Promise<Record<string, string>> => {
+  const { data } = await api.get('/config');
+  return data;
+};
+
+export const updateConfig = async (updates: Record<string, string>) => {
+  const { data } = await api.post('/config', updates);
   return data;
 };
 

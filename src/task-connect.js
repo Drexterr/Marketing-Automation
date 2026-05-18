@@ -1,10 +1,13 @@
 import logger from './utils/logger.js';
 import { randomDelay, randomBetween, checkWeeklyLimit, getDynamicWeeklyLimit, checkDailyLimit, isSessionValid, logSessionSummary, humanType, humanClick, isWithinOperatingHours, EmergencyStopError } from './utils/helpers.js';
+import { visionClick, visionFindEditor } from './utils/vision.js';
 import * as claudeService from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
 import { ConnectionRepository } from '../shared/repositories/ConnectionRepository.js';
+import { ActivityRepository } from '../shared/repositories/ActivityRepository.js';
 
 const connectionRepo = new ConnectionRepository();
+const activityRepo = new ActivityRepository();
 
 export async function searchAndExtractProfiles(page, keyword) {
   logger.info(`Searching for: ${keyword}`);
@@ -204,7 +207,16 @@ export async function runConnectionWorkflow(page, signal = null) {
       break;
     }
 
-    const rawProfiles = await searchAndExtractProfiles(page, keyword);
+    let rawProfiles = await searchAndExtractProfiles(page, keyword);
+
+    // Filter by target titles if set — match against headline
+    const targetTitles = (process.env.TARGET_TITLES || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    if (targetTitles.length > 0) {
+      rawProfiles = rawProfiles.filter(p =>
+        targetTitles.some(t => (p.headline || '').toLowerCase().includes(t))
+      );
+      logger.info(`Title filter applied — ${rawProfiles.length} profiles match [${targetTitles.join(', ')}]`);
+    }
 
     // Open to Work profiles get processed first as priority audience
     const profiles = [
@@ -259,6 +271,7 @@ export async function runConnectionWorkflow(page, signal = null) {
           evaluation.reason = `[Open to Work] ${evaluation.reason}`;
         }
         logger.info(`Score: ${evaluation.score} - ${evaluation.reason}${profile.isOpenToWork ? ' [OTW priority]' : ''}`);
+        activityRepo.log('profile_evaluated', 'connect', { name: profile.name, score: evaluation.score, reason: evaluation.reason, openToWork: profile.isOpenToWork });
 
         if (evaluation.score >= 7) {
           const note = await claudeService.generateConnectionNote(
@@ -284,6 +297,7 @@ export async function runConnectionWorkflow(page, signal = null) {
           }
         } else {
           logger.info(`Skipping ${profile.name} (low score)`);
+          activityRepo.log('profile_skipped', 'connect', { name: profile.name, score: evaluation.score, reason: evaluation.reason });
           await randomDelay(3000, 7000, signal);
         }
       } catch (error) {
@@ -332,42 +346,76 @@ async function sendConnectionRequest(page, profile, score, note, keyword, signal
     await page.goto(profile.url, { waitUntil: 'domcontentloaded' });
     await randomDelay(5000, 8000, signal);
 
-    let connectButton = await page.$('button.pvs-profile-actions__action:has-text("Connect")');
-
-    if (!connectButton) {
-      const moreButton = await page.$('button[aria-label="More actions"]');
-      if (moreButton) {
-        await humanClick(moreButton, signal);
-        await randomDelay(1000, 2000, signal);
-        connectButton = await page.$('div[role="button"]:has-text("Connect")');
+    // Try stable aria-label first, fall back to vision
+    let clicked = false;
+    for (const sel of ['button[aria-label="Connect"]', 'button[aria-label*="Connect" i]']) {
+      const btn = await page.$(sel);
+      if (btn && await btn.isVisible().catch(() => false)) {
+        await humanClick(btn, signal);
+        clicked = true;
+        logger.info('Connect button found via aria-label');
+        break;
       }
     }
 
-    if (!connectButton) {
-      logger.warn(`Connect button not found for ${profile.name}`);
+    if (!clicked) {
+      // Try "More actions" dropdown via aria-label, then vision
+      const moreBtn = await page.$('button[aria-label="More actions"], button[aria-label*="More actions" i]');
+      if (moreBtn) {
+        await humanClick(moreBtn, signal);
+        await randomDelay(800, 1500, signal);
+        const dropdownConnect = await page.$('[role="menuitem"]:has-text("Connect"), .artdeco-dropdown__content button:has-text("Connect")');
+        if (dropdownConnect) {
+          await humanClick(dropdownConnect, signal);
+          clicked = true;
+        }
+      }
+    }
+
+    if (!clicked) {
+      logger.info('Stable selectors missed — using vision to find Connect button');
+      clicked = await visionClick(page, `the "Connect" button in the profile action buttons area for ${profile.name}`);
+    }
+
+    if (!clicked) {
       failureReason = 'connect_button_not_found';
     } else {
-      await humanClick(connectButton, signal);
       await randomDelay(2000, 4000, signal);
 
-      const addNoteButton = await page.$('button[aria-label="Add a note"]');
-      if (!addNoteButton) {
-        logger.warn(`"Add a note" button not found for ${profile.name}`);
-        failureReason = 'note_dialog_missing';
-        const cancelButton = await page.$('button[aria-label="Dismiss"]');
-        if (cancelButton) await humanClick(cancelButton, signal);
+      // "Add a note" button — try aria-label, then vision
+      let noteClicked = false;
+      const addNoteBtn = await page.$('button[aria-label="Add a note"]');
+      if (addNoteBtn) {
+        await humanClick(addNoteBtn, signal);
+        noteClicked = true;
       } else {
-        await humanClick(addNoteButton, signal);
-        await randomDelay(2000, 3000, signal);
+        noteClicked = await visionClick(page, '"Add a note" button in the connection request dialog');
+      }
 
-        const editor = await page.$('textarea[name="message"]');
+      if (!noteClicked) {
+        failureReason = 'note_dialog_missing';
+        const cancelBtn = await page.$('button[aria-label="Dismiss"], button[aria-label*="Dismiss" i]');
+        if (cancelBtn) await humanClick(cancelBtn, signal);
+      } else {
+        await randomDelay(1500, 2500, signal);
+
+        const editor = await visionFindEditor(page, 5000);
         if (editor) {
           await humanType(editor, note, signal);
           await randomDelay(2000, 4000, signal);
-          const sendButton = await page.$('button[aria-label="Send now"]');
-          if (sendButton) await humanClick(sendButton, signal);
-          success = true;
-          logger.info(`Successfully sent request to ${profile.name}`);
+
+          // Send — try aria-label, then vision
+          let sent = false;
+          const sendBtn = await page.$('button[aria-label="Send now"], button[aria-label*="Send" i]');
+          if (sendBtn) {
+            await humanClick(sendBtn, signal);
+            sent = true;
+          } else {
+            sent = await visionClick(page, '"Send now" or "Send" button in the connection request dialog');
+          }
+          success = sent;
+          if (sent) logger.info(`Successfully sent request to ${profile.name}`);
+          else failureReason = 'send_button_not_found';
         } else {
           failureReason = 'note_editor_not_found';
         }
@@ -381,9 +429,12 @@ async function sendConnectionRequest(page, profile, score, note, keyword, signal
     failureReason = `error: ${error.message}`;
   }
 
-  /**
-   * Log ALL outcomes (success or failure)
-   */
+  activityRepo.log(
+    success ? 'connection_sent' : 'connection_failed',
+    'connect',
+    { name: profile.name, headline: profile.headline, score, status: success ? 'success' : 'failure', failureReason: success ? null : failureReason }
+  );
+
   connectionRepo.upsert(profile.url, success ? 'request_sent' : 'failed', {
     name: profile.name,
     headline: profile.headline,

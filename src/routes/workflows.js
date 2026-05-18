@@ -51,9 +51,34 @@ router.post('/:name/start', (req, res) => {
   logger.info(`Manual trigger: starting workflow ${name}`);
   RuntimeStateService.setPulse({ status: 'RUNNING', activeTask: name });
 
+  const b = req.body || {};
+  const extraEnv = {};
+
+  if (name === 'connect') {
+    if (b.targetKeywords) extraEnv.TARGET_KEYWORDS = String(b.targetKeywords);
+    if (b.targetTitles)   extraEnv.TARGET_TITLES   = String(b.targetTitles);
+    if (b.maxPerWeek)     extraEnv.WEEKLY_CONNECTION_LIMIT = String(Number(b.maxPerWeek));
+  }
+  if (name === 'feed') {
+    if (b.maxPerSession)  extraEnv.FEED_MAX_PER_SESSION  = String(Number(b.maxPerSession));
+    if (b.topicKeywords)  extraEnv.FEED_TOPIC_KEYWORDS   = String(b.topicKeywords);
+  }
+  if (name === 'first-message') {
+    if (b.tone)           extraEnv.FIRST_MESSAGE_TONE    = String(b.tone);
+  }
+  if (name === 'replies') {
+    if (b.mode)           extraEnv.REPLY_MODE            = String(b.mode);
+  }
+  if (name === 'followups') {
+    if (b.intervalDays)   extraEnv.FOLLOWUP_INTERVAL_DAYS = String(Number(b.intervalDays));
+  }
+  if (name === 'post') {
+    if (b.frequency)      extraEnv.POST_FREQUENCY        = String(b.frequency);
+  }
+
   // Start the workflow as a child process to avoid blocking the event loop
   const child = fork(path.join(process.cwd(), 'src', 'index.js'), [name], {
-    env: { ...process.env, DASHBOARD_TRIGGERED: 'true' }
+    env: { ...process.env, DASHBOARD_TRIGGERED: 'true', ...extraEnv }
   });
 
   activeWorkflows.set(name, child);

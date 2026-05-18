@@ -20,8 +20,8 @@ export async function runFollowUpMarking(signal = null) {
       const sentTime = new Date(record.updated_at).getTime();
       const daysSinceSent = (now - sentTime) / (1000 * 60 * 60 * 24);
       
-      // Default timing: 5 days for first follow-up eligibility
-      if (daysSinceSent >= 5) {
+      const intervalDays = parseInt(process.env.FOLLOWUP_INTERVAL_DAYS || '5', 10);
+      if (daysSinceSent >= intervalDays) {
         connectionRepo.upsert(record.profile_url, 'followup_eligible', {
           followUpEligibleAt: new Date().toISOString(),
           followUpCount: 0

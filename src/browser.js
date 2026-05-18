@@ -95,11 +95,63 @@ export class BrowserManager {
         window.chrome = { runtime: {} };
       });
 
+      await this._selectSavedProfile();
+
       return this.page;
     } catch (error) {
       logger.error('Failed to launch browser', { error: error.message });
       if (this.browser) await this.browser.close();
       throw error;
+    }
+  }
+
+  async _selectSavedProfile() {
+    try {
+      logger.info('Navigating to LinkedIn to check for account chooser...');
+      await this.page.goto('https://www.linkedin.com/feed/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+
+      const chooser = await this.page.$('h1:has-text("Choose an account"), h1:has-text("Welcome back")');
+      if (!chooser) return;
+
+      logger.info('Account chooser detected — selecting saved profile...');
+      const founderName = process.env.FOUNDER_NAME;
+      let accountBtn = null;
+
+      if (founderName) {
+        accountBtn = await this.page.$(`button:has-text("${founderName}"), [aria-label*="${founderName}"]`);
+      }
+      if (!accountBtn) {
+        accountBtn = await this.page.$(
+          '[data-test-id="account-chooser-item"], .auth-account-chooser__item, button.cp-account-chooser__item'
+        );
+      }
+
+      if (!accountBtn) {
+        logger.warn('Account chooser shown but no matching profile button found');
+        return;
+      }
+
+      await accountBtn.click();
+      await this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+
+      // Handle password prompt after selecting the saved profile
+      const passwordField = await this.page.$('input[name="session_password"], input#password');
+      if (passwordField && process.env.LINKEDIN_PASSWORD) {
+        logger.info('Password requested after profile selection — entering credentials...');
+        await passwordField.fill(process.env.LINKEDIN_PASSWORD);
+        const signinBtn = await this.page.$('button[type="submit"], button:has-text("Sign in")');
+        if (signinBtn) {
+          await signinBtn.click();
+          await this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        }
+      }
+
+      logger.info('Saved profile selected successfully');
+    } catch (err) {
+      logger.warn('Profile selection step failed (non-fatal)', { error: err.message });
     }
   }
 

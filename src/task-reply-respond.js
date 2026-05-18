@@ -1,5 +1,6 @@
 import logger from './utils/logger.js';
 import { appendReviewQueue, randomDelay, humanType, humanClick, EmergencyStopError } from './utils/helpers.js';
+import { visionClick, visionFindEditor } from './utils/vision.js';
 import { sendAlert } from './utils/alerts.js';
 import { generateReplyResponse } from './claude-service.js';
 import { RuntimeStateService } from '../backend-api/services/RuntimeStateService.js';
@@ -80,22 +81,41 @@ export async function runReplyResponse(page, signal = null) {
         });
         await sendAlert(`🔥 *Hot Lead*! AI escalated ${profile.name || profile.profile_url} to human review: "${lastMessageText.substring(0, 50)}..."`);
         responsesSent++; // Counting escalation as a processed record
+      } else if (process.env.REPLY_MODE === 'manual') {
+        logger.info(`Reply mode is manual — queuing reply for ${profile.name || profile.profile_url} instead of sending.`);
+        await appendReviewQueue({
+          type: 'manual_reply',
+          profile: profile.profile_url,
+          reason: 'Manual reply mode — review and send this AI-drafted reply',
+          draftedReply: aiResponse,
+        });
+        connectionRepo.upsert(profile.profile_url, 'sending_reply', {
+          pendingAiResponse: aiResponse,
+          aiResponseDraftedAt: new Date().toISOString()
+        });
+        responsesSent++;
       } else {
-        const editor = await page.$('.msg-form__contenteditable[role="textbox"]');
+        const editor = await visionFindEditor(page, 6000);
         if (editor) {
           connectionRepo.upsert(profile.profile_url, 'sending_reply', {
-              pendingAiResponse: aiResponse,
-              aiResponseDraftedAt: new Date().toISOString()
+            pendingAiResponse: aiResponse,
+            aiResponseDraftedAt: new Date().toISOString()
           });
 
-          await humanClick(editor, signal);
           await humanType(editor, aiResponse, signal);
           await randomDelay(2000, 4000, signal);
-          
-          const sendButton = await page.$('.msg-form__send-button');
-          if (sendButton && !(await sendButton.isDisabled())) {
+
+          // Send button — try aria-label, then vision
+          let sent = false;
+          const sendButton = await page.$('button[aria-label*="Send" i]:not([disabled])');
+          if (sendButton) {
             await humanClick(sendButton, signal);
-            
+            sent = true;
+          } else {
+            sent = await visionClick(page, 'the enabled "Send" button for the message');
+          }
+
+          if (sent) {
             connectionRepo.upsert(profile.profile_url, 'conversation_active', {
               aiResponseSent: true,
               lastAiResponse: aiResponse,

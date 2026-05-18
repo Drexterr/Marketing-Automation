@@ -7,6 +7,7 @@ import activityRoutes from './routes/activity.js';
 import promptsRoutes from './routes/prompts.js';
 import runtimeRoutes from './routes/runtime.js';
 import reviewQueueRoutes from './routes/review-queue.js';
+import configRoutes from './routes/config.js';
 import workflowRoutes from '../src/routes/workflows.js';
 import { authMiddleware } from './middleware/auth.js';
 import { securityMiddleware } from './middleware/security.js';
@@ -33,6 +34,7 @@ export function createServer() {
   app.use('/api/runtime', authMiddleware, runtimeRoutes);
   app.use('/api/review-queue', authMiddleware, reviewQueueRoutes);
   app.use('/api/workflows', authMiddleware, workflowRoutes);
+  app.use('/api/config', authMiddleware, configRoutes);
 
   return app;
 }

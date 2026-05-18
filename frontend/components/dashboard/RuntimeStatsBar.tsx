@@ -21,15 +21,18 @@ export function RuntimeStatsBar() {
   }
 
   const metrics = [
-    { label: 'Total Sent', value: stats?.funnel?.sent || 0, icon: Send, color: 'text-blue-400' },
-    { label: 'Accepted', value: stats?.funnel?.accepted || 0, icon: UserCheck, color: 'text-emerald-400' },
-    { label: 'Replied', value: stats?.funnel?.replied || 0, icon: MessageSquareReply, color: 'text-amber-400' },
-    { label: 'Interested', value: stats?.funnel?.interested || 0, icon: Heart, color: 'text-rose-400' },
+    { label: 'Requests Sent',   value: stats?.funnel?.sent      || 0, icon: Send,               color: 'text-blue-400' },
+    { label: 'Accepted',        value: stats?.funnel?.accepted  || 0, icon: UserCheck,           color: 'text-emerald-400' },
+    { label: 'Replied',         value: stats?.funnel?.replied   || 0, icon: MessageSquareReply,  color: 'text-amber-400' },
+    { label: 'Interested',      value: stats?.funnel?.interested|| 0, icon: Heart,               color: 'text-rose-400' },
+    { label: 'Comments',        value: stats?.comments          || 0, icon: Activity,            color: 'text-violet-400' },
+    { label: 'Replies Sent',    value: stats?.repliesSent       || 0, icon: MessageSquareReply,  color: 'text-sky-400' },
+    { label: 'First Messages',  value: stats?.firstMessages     || 0, icon: Send,                color: 'text-teal-400' },
   ];
 
   return (
     <div className="bg-card/50 border border-border/50 rounded-2xl p-6 backdrop-blur-sm shadow-sm h-full flex flex-col">
-      <div className="flex items-center gap-3 mb-6 border-b border-border/50 pb-4">
+      <div className="flex items-center gap-3 mb-4 border-b border-border/50 pb-4">
         <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400 shadow-sm">
           <Activity size={20} />
         </div>
@@ -39,19 +42,19 @@ export function RuntimeStatsBar() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 flex-1">
+      <div className="grid grid-cols-2 gap-2">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-lg" />
           ))
         ) : (
           metrics.map((m, i) => (
-            <div key={i} className="flex flex-col p-4 border border-border/50 rounded-xl bg-slate-900/50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{m.label}</span>
-                <m.icon size={14} className={m.color} />
+            <div key={i} className="flex items-center justify-between px-3 py-2.5 border border-border/50 rounded-lg bg-slate-900/50">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider leading-none">{m.label}</span>
+                <span className={`text-lg font-black leading-none ${m.color}`}>{m.value}</span>
               </div>
-              <span className={`text-2xl font-black ${m.color}`}>{m.value}</span>
+              <m.icon size={14} className={`${m.color} opacity-60`} />
             </div>
           ))
         )}

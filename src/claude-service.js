@@ -204,15 +204,29 @@ OUTPUT RULE: Return ONLY the note text. No quotes, no explanation.
  * Returns: boolean
  */
 export async function isPostRelevant(postContent) {
-  const sContent = sanitizePromptInput(postContent.slice(0, 600));
+  const sContent = sanitizePromptInput(postContent.slice(0, 800));
+
+  const extraTopics = process.env.FEED_TOPIC_KEYWORDS
+    ? `\n- Post topic matches any of these custom keywords: ${process.env.FEED_TOPIC_KEYWORDS}`
+    : '';
 
   const prompt = `
-TASK: Decide if this LinkedIn post is relevant to the tech/startup/developer community.
+TASK: Decide if this LinkedIn post should be commented on by a founder of an AI interview-prep product.
 
-RELEVANT topics: software engineering careers, coding interviews, job hunting in tech, campus placements, developer tools, AI/ML, SaaS, startup building, bootcamp experiences, engineering college life, tech hiring, switching jobs in tech, system design, DSA prep.
-IRRELEVANT topics: cooking, fitness, travel, politics, sports, general motivational content, non-tech career advice, sales/marketing tips unrelated to tech.
+ALWAYS RELEVANT — comment if ANY of these are true:
+- Post is by or mentions: Ankur Warikoo, or any career coach / life coach
+- Author title/role contains: career coach, placement officer, placement cell, DSA educator, interview trainer, campus recruiter
+- Post contains hashtags: #InterviewTips, #DSA, #Placements, #CampusPlacement, #JobSearch, #CareerAdvice, #TechJobs, #SoftwareJobs, #AI, #MachineLearning, #SoftwareEngineering, #Tech
+- Post topic: DSA prep, coding interview tips, placement season, job hunting in tech, campus hiring, system design prep, resume tips for developers, tech career advice, fresher hiring, engineering placements, cracking FAANG/product companies
+- Post topic: AI/ML trends, LLMs, ChatGPT/Claude/Gemini use cases, software development best practices, engineering productivity, developer tools, automation in tech, startup tech culture, product engineering, coding insights, software architecture insights${extraTopics}
 
-POST:
+NOT RELEVANT — skip if post is mainly about:
+- Cooking, fitness, travel, sports, relationships, politics
+- Sales/marketing unrelated to tech careers or software
+- Generic inspirational quotes with no tech career angle
+- B2B SaaS fundraising or startup finance (unless tied to hiring/careers/engineering)
+
+POST (may include author name and headline at the top):
 ${wrapInTag('post_content', sContent)}
 
 OUTPUT RULE: Reply with ONLY valid JSON, no other text:
@@ -224,7 +238,7 @@ OUTPUT RULE: Reply with ONLY valid JSON, no other text:
     const parsed = JSON.parse(cleanJSON(result));
     return parsed.relevant === true;
   } catch {
-    return false; // fail-safe: skip the post
+    return false;
   }
 }
 
@@ -279,8 +293,9 @@ ${productCtx()}
 
 TASK: Write the first LinkedIn message ${process.env.FOUNDER_NAME || 'the founder'} will send after this person accepted their connection request.
 
+TONE: ${process.env.FIRST_MESSAGE_TONE || 'casual'} — let this guide the language, energy, and formality of the message.
+
 RULES:
-- Extremely casual and conversational — like texting a new acquaintance
 - NO pitching, NO selling, NO product mentions, NO links
 - Maximum 400 characters
 - Reference something specific from their headline or company to show you looked at their profile
@@ -375,6 +390,7 @@ OUTPUT RULE: Return ONLY the post text. No title, no explanation.
 
   return callClaude(prompt);
 }
+
 
 // Export the close helper so index.js can call it on shutdown
 export { closeWebClient };

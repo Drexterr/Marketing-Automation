@@ -43,7 +43,7 @@ export function WorkflowControlCenter() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 overflow-auto pr-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 content-start overflow-auto pr-2">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-28 w-full rounded-xl" />

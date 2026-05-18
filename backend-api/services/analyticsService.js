@@ -1,8 +1,10 @@
 import { ConnectionRepository } from '../../shared/repositories/ConnectionRepository.js';
 import { RuntimeStateRepository } from '../../shared/repositories/RuntimeStateRepository.js';
+import { ActivityRepository } from '../../shared/repositories/ActivityRepository.js';
 
 const connRepo = new ConnectionRepository();
 const stateRepo = new RuntimeStateRepository();
+const activityRepo = new ActivityRepository();
 
 export async function getAggregatedAnalytics() {
   const connections = connRepo.findAllConnections();
@@ -16,9 +18,17 @@ export async function getAggregatedAnalytics() {
     interested: connections.filter(c => c.state === 'interested').length,
   };
 
+  const allActivity = activityRepo.getRecent(5000);
+  const comments = allActivity.filter(r => r.event_type === 'feed_comment').length;
+  const repliesSent = allActivity.filter(r => r.event_type === 'reply_sent').length;
+  const firstMessages = allActivity.filter(r => r.event_type === 'first_message_sent').length;
+
   return {
     ...summary,
     funnel,
+    comments,
+    repliesSent,
+    firstMessages,
     timestamp: new Date().toISOString()
   };
 }

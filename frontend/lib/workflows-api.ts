@@ -11,8 +11,8 @@ export const fetchWorkflowsStatus = async (): Promise<WorkflowStatus[]> => {
   return res.data.workflows;
 };
 
-export const startWorkflow = async (name: string) => {
-  const res = await axios.post(`/api/workflows/${name}/start`);
+export const startWorkflow = async (name: string, params?: Record<string, any>) => {
+  const res = await axios.post(`/api/workflows/${name}/start`, params ?? {});
   return res.data;
 };
 
